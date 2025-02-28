@@ -1,0 +1,329 @@
+/*--------
+Fonts
+----------*/
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300;400&display=swap");
+
+/*----------
+Global
+-----------*/
+:root {
+    --Green-Dark:#327749;
+    --Green-White:#96CB54;
+    --White: #FFFFFF;
+    --RGBA:rgba(0,0,0,0.08);
+    --Black: #000000;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: "Poppins", sans-serif;
+    text-decoration: none;
+}
+
+::selection {
+    background: var(--Green-White);
+    color: var(--White);
+}
+
+body {
+    height: 100vh;
+    background-color: var(--Green-White);
+}
+
+img {
+    max-width: 100%;
+}
+
+/*-----------
+Particles
+-------------*/
+#particles-js {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    width: 100%;
+    height: 100%;
+}
+
+/*-----------
+Encabezado
+-------------*/
+header {
+    width: 100%;
+    background: var(--Green-Dark);
+    padding: 0;
+    text-align: center;
+    box-shadow: 0.5px 6px var(--RGBA);
+}
+
+header .logo {
+    font-size: 36px;
+    color: var(--White);
+    font-weight: 400;
+    text-decoration: none;
+}
+
+header .logo span {
+    color: var(--Green-White);
+}
+
+/*------------
+Principal
+--------------*/
+main {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+}
+
+.traductor {
+    width: 60%;
+}
+
+.traductor-contenedor {
+    margin-top: 80px;
+}
+
+.entrada-texto {
+    width: 655px;
+    height: 288px;
+    margin: 8px 0;
+    padding: 20px;
+    font-weight: 400;
+    font-size: 32px;
+    line-height: 48px;
+    outline: none;
+    border:  1px solid var(--RGBA);
+    border-radius: 15px;
+    box-shadow: 5px 5px var(--Green-Dark);
+    background: transparent;
+    resize: none;
+    position: relative;
+    z-index: 1;
+}
+
+.entrada-texto::placeholder,:focus {
+    color: var(--Black);
+}
+
+.btn-tbraille {
+    width: 328px;
+    height: 57px;
+    padding: 24px;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1px;
+    text-align: center;
+    color: var(--White);
+    background: var(--Green-Dark);
+    border: 1px solid var(--Green-Dark);
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow: 0px 5px 20px -3px var(--Green-Dark);
+    position: relative;
+    z-index: 1;
+}
+
+.btn-tbraille:active {
+    box-shadow: inset 2px 2px 4px var(--RGBA),
+    inset -3px -4px 8px var(--Green-White);
+    color: var(--White);
+}
+
+.btn-btexto {
+    width: 328px;
+    height: 57px;
+    padding: 24px;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1px;
+    text-align: center;
+    color: var(--Green-Dark);
+    background: var(--White);
+    border: 1px solid var(--Green-Dark);
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow: 0px 5px 20px -3px var(--Green-Dark);
+    position: relative;
+    z-index: 1;
+}
+
+.btn-copiar:active,
+.btn-btexto:active {
+    box-shadow: inset 2px 2px 4px var(--Green-Dark),
+    inset -3px -4px 8px var(--RGBA);
+    color: var(--Green-White);
+}
+
+.tarjeta {
+    width: 270px;
+    height: 580px;
+    background: var(--Green-Dark);
+    box-shadow: 10px 24px 32px -8px var(--Black);
+    position: relative;
+    margin-top: 40px;
+    border-radius: 32px;
+    text-align: center;
+    z-index: 1;
+}
+
+.tarjeta-contenedor {
+    width: 250px;
+    margin: auto;
+    margin-top: 50%;
+    background: var(--Green-Dark);
+}
+
+.imagen {
+    border-radius: 15px;
+}
+
+.texto-uno {
+    font-weight: 700;
+    font-size: 18px;
+    line-height: 120%;
+    text-align: center;
+    color: var(--White);
+    background: var(--Green-Dark);
+}
+
+.texto-dos {
+    font-weight: 400;
+    font-size: 12px;
+    line-height: 150%;
+    text-align: center;
+    color: var(--White);
+    background: var(--Green-Dark);
+}
+
+.braille-result {
+    width: 100%;
+    height: 485px;
+    position: absolute;
+    padding: 20px;
+    top: 0;
+    left: 0;
+    font-weight: 400;
+    font-size: 24px;
+    line-height: 36px;
+    color: var(--White);
+    background: transparent;
+    border-top-right-radius: 32px;
+    border-top-left-radius: 32px;
+    border: none;
+    resize: none;
+    z-index: 1;
+}
+
+.braille-result:focus {
+    outline: none;
+}
+
+.btn-copiar {
+    width: 224px;
+    height: 57px;
+    margin: 23px;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    visibility: hidden;
+    padding: 24px;
+    font-size: 16px;
+    line-height: 1px;
+    text-align: center;
+    background: var(--Green-White);
+    border: 1px solid var(--Green-Dark);
+    border-radius: 60px;
+    cursor: pointer;
+    color: var(--White);
+    z-index: 1;
+}
+
+.btn-tbraille:hover,
+.btn-btexto:hover,
+.btn-copiar:hover {
+    transform: scale(0.97);
+}
+
+/*-----------
+Media
+------------*/
+@media(max-width: 1250px) {
+    main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+    }
+
+    .traductor {
+        width: 100%;
+    }
+
+    .traductor-contenedor {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: inherit;
+        margin: 10px;
+    }
+
+    .btn-btexto {
+        margin: 10px;
+    }
+
+    .btn-tbraille {
+        margin: 10px;
+    }
+
+    .tarjeta {
+        width: 665px;
+        height: 300px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-end;
+        margin: 0;
+    }
+
+    .tarjeta-contenedor {
+        display: block;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        position: absolute;
+        bottom: 20%;
+        font-size: 24px;
+        font-weight: 700;
+    }
+
+    .imagen {
+        display: none;
+    }
+
+    .btn-copiar {
+        position: inherit;
+        width: 100%;
+    }
+
+    .braille-result {
+        width: 100%;
+        height: 210px;
+        padding: 10px;
+    }
+}
+
+@media(max-width: 720px) {
+    
+    .entrada-texto {
+        width: 95%;
+    }
+
+    .tarjeta {
+        width: 95%;
+    }
+}

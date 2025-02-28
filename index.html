@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traductor de Braille</title>
+    <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+    
+    <!-- Encabezado -->
+    <header>
+        <a href="#" class="logo"><span>Traductor</span>Braille</a>
+    </header>
+
+    <!-- Principal -->
+    <main>
+        <section class="traductor">
+            <div class="traductor-contenedor">
+                <textarea class="entrada-texto" placeholder="Ingrese el texto o número aquí"></textarea>
+                <button type="submit" class="btn-tbraille">Traducir a braille</button>
+                <button type="submit" class="btn-btexto">Traducir a texto</button>
+            </div>
+        </section>
+        <section class="tarjeta">
+            <div class="tarjeta-contenedor">
+                <img src="https://i.giphy.com/JenhdIHCpawJLMNZSD.webp" class="imagen">
+                <p class="texto-uno">Ningún mensaje fue encontrado</p>
+                <p class="texto-dos">Ingrese el texto o número que desea traducir a braille</p>
+            </div>
+            <textarea class="braille-result" readonly></textarea>
+            <button type="submit" class="btn-copiar">Copiar</button>
+        </section>
+        <div id="particles-js"></div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/particles.js/2.0.0/particles.min.js"></script>
+    <script src="./js/archivo.js"></script>
+    <script src="./js/particles.js"></script>
+</body>
+</html>
