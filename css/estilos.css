@@ -7,8 +7,8 @@ Fonts
 Global
 -----------*/
 :root {
-    --Green-Dark:#327749;
-    --Green-White:#96CB54;
+    --Green-Dark:#1A5276;
+    --Green-White:#5DADE2;
     --White: #FFFFFF;
     --RGBA:rgba(0,0,0,0.08);
     --Black: #000000;
@@ -159,6 +159,7 @@ main {
     inset -3px -4px 8px var(--RGBA);
     color: var(--Green-White);
 }
+
 
 .tarjeta {
     width: 270px;
