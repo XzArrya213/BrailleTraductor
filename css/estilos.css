@@ -160,6 +160,24 @@ main {
     color: var(--Green-White);
 }
 
+.btn-barchivo{
+    width: 328px;
+    height: 57px;
+    padding: 24px;
+    font-style: normal;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1px;
+    text-align: center;
+    color: var(--Green-Dark);
+    background: var(--White);
+    border: 1px solid var(--Green-Dark);
+    border-radius: 60px;
+    cursor: pointer;
+    box-shadow: 0px 5px 20px -3px var(--Green-Dark);
+    position: relative;
+    z-index: 1;
+}
 
 .tarjeta {
     width: 270px;
