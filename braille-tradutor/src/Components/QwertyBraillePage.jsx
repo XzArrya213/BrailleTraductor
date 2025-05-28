@@ -1,13 +1,25 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { getAuth, signOut } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { QwertyBrailleInput, brailleATexto } from "./Translator";
 
-export default function QwertyBraillePage() {
+const QwertyBraillePage = () => {
+  const navigate = useNavigate();
+  const auth = getAuth();
+
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (!user) {
+        navigate("/login");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate, auth]);
+
   // Estados para la sección de texto (solo Qwerty Braille)
   const [textoEntrada, setTextoEntrada] = useState("");
   const [textoTraducido, setTextoTraducido] = useState("");
-  const navigate = useNavigate();
 
   // Siempre mostrar el QwertyBrailleInput como entrada
   return (
@@ -26,11 +38,18 @@ export default function QwertyBraillePage() {
               <div
                 className={`w-full max-w-[700px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start transition-all duration-200`}
               >
-                <QwertyBrailleInput
-                  value={textoEntrada}
-                  onChange={setTextoEntrada}
-                />
+                <div className="w-full h-full">
+                  <QwertyBrailleInput
+                    value={textoEntrada}
+                    onChange={setTextoEntrada}
+                  />
+                </div>
               </div>
+              <p className="text-sm text-gray-600 mb-2 text-center">
+                Mantén presionadas S, D, F, J, K, L para formar puntos Braille y
+                suéltalas juntas para escribir el carácter. Espacio: barra
+                espaciadora. Borrar: Backspace
+              </p>
               <div className="flex flex-wrap gap-2 mt-4 justify-center">
                 <button
                   className={`bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg`}
@@ -98,6 +117,8 @@ export default function QwertyBraillePage() {
       </div>
     </div>
   );
-}
+};
+
+export default QwertyBraillePage;
 
 //Comentario de hipolito

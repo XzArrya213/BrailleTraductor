@@ -4,19 +4,13 @@ import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import Box from "@mui/material/Box";
 import { getAuth, signOut } from "firebase/auth";
-import { Route, Routes, useNavigate } from "react-router-dom";
+import { getDatabase, ref, push } from "firebase/database";
+import { Route, Routes, useNavigate, Navigate } from "react-router-dom";
 import * as pdfjsLib from "pdfjs-dist/build/pdf";
 import mammoth from "mammoth";
-import {
-  Document,
-  Packer,
-  Paragraph,
-  HeadingLevel,
-  Table,
-  TableRow,
-  TableCell,
-} from "docx";
+import { Document, Packer, Paragraph } from "docx";
 import QwertyBraillePage from "./QwertyBraillePage";
+import SavedTranslations from "./SavedTranslations";
 
 // Mapa de Braille en español (ampliado y corregido para signos y puntuación)
 const mapaBraille = {
@@ -295,94 +289,65 @@ function formatearBrailleEstandar(braille) {
     .join("\n\f\n"); // salto de página
 }
 
-// Función para formatear el Braille para Word (DOCX) con márgenes y formato estándar
-function formatearBrailleParaWord(braille) {
-  const lineas = dividirEnLineasBrailleSeguro(braille, 40);
-  // 4. Número de líneas por página: 25
-  const paginas = [];
-  for (let i = 0; i < lineas.length; i += 25) {
-    paginas.push(lineas.slice(i, i + 25));
-  }
-  // 5. Márgenes: superior/inferior (2 líneas en blanco), izquierdo (3 celdas), derecho (relleno si falta)
-  return paginas
-    .map((pagina) => {
-      const margenSup = ["", ""];
-      const margenInf = ["", ""];
-      const paginaConMargen = pagina.map((linea) => {
-        let l = "   " + linea; // margen izquierdo
-        while (l.length < 43) l += " "; // margen derecho
-        return l;
-      });
-      return [...margenSup, ...paginaConMargen, ...margenInf].join("\n");
-    })
-    .join("\n\f\n"); // salto de página
-}
-
 // QWERTY Braille: Componente para escribir Braille con teclado QWERTY (SDF JKL)
 export function QwertyBrailleInput({ value, onChange }) {
   const [buffer, setBuffer] = useState("");
   const ref = useRef();
-  const focused = useRef(false);
-  // Nuevo: arreglo temporal para las teclas presionadas
   const comboActual = useRef([]);
 
   useEffect(() => {
     if (ref.current) ref.current.focus();
-  }, [buffer]);
+  }, []);
 
   useEffect(() => {
-    const teclasBraille = ["s", "d", "f", "j", "k", "l"];
-    const orden = ["s", "d", "f", "j", "k", "l"];
+    const teclasBraille = ["f", "d", "s", "j", "k", "l"]; // 1-2-3-4-5-6
+    const orden = ["f", "d", "s", "j", "k", "l"];
     let timeoutId = null;
 
     const handleKeyDown = (e) => {
-      if (!focused.current) return;
       const key = e.key.toLowerCase();
 
       if (teclasBraille.includes(key)) {
-        // Limpiar el timeout anterior si existe
         if (timeoutId) clearTimeout(timeoutId);
-
-        // Agregar la tecla al combo si no está ya presente
         if (!comboActual.current.includes(key)) {
           comboActual.current.push(key);
         }
 
-        // Configurar nuevo timeout para procesar el combo
         timeoutId = setTimeout(() => {
           if (comboActual.current.length > 0) {
-            // Convertir combinación a bits
             const bits = orden
               .map((k) => (comboActual.current.includes(k) ? "1" : "0"))
               .join("");
 
+            // Mapeo actualizado según el abecedario Perkins
             const brailleMap = {
-              100000: "⠁",
-              110000: "⠃",
-              100100: "⠉",
-              100110: "⠙",
-              100010: "⠑",
-              110100: "⠋",
-              110110: "⠛",
-              110010: "⠓",
-              "010100": "⠊",
-              "010110": "⠚",
-              101000: "⠅",
-              111000: "⠇",
-              101100: "⠍",
-              101110: "⠝",
-              101010: "⠕",
-              111100: "⠏",
-              111110: "⠟",
-              111010: "⠗",
-              "011100": "⠎",
-              "011110": "⠞",
-              101001: "⠥",
-              111001: "⠧",
-              "010111": "⠺",
-              101101: "⠭",
-              101111: "⠽",
-              101011: "⠵",
+              100000: "⠁", // A (punto 1)
+              110000: "⠃", // B (puntos 1-2)
+              100100: "⠉", // C (puntos 1-4)
+              100110: "⠙", // D (puntos 1-4-5)
+              100010: "⠑", // E (puntos 1-5)
+              110100: "⠋", // F (puntos 1-2-4)
+              110110: "⠛", // G (puntos 1-2-4-5)
+              110010: "⠓", // H (puntos 1-2-5)
+              "010100": "⠊", // I (puntos 2-4)
+              "010110": "⠚", // J (puntos 2-4-5)
+              101000: "⠅", // K (puntos 1-3)
+              111000: "⠇", // L (puntos 1-2-3)
+              101100: "⠍", // M (puntos 1-3-4)
+              101110: "⠝", // N (puntos 1-3-4-5)
+              101010: "⠕", // O (puntos 1-3-5)
+              111100: "⠏", // P (puntos 1-2-3-4)
+              111110: "⠟", // Q (puntos 1-2-3-4-5)
+              111010: "⠗", // R (puntos 1-2-3-5)
+              "011100": "⠎", // S (puntos 2-3-4)
+              "011110": "⠞", // T (puntos 2-3-4-5)
+              101001: "⠥", // U (puntos 1-3-6)
+              111001: "⠧", // V (puntos 1-2-3-6)
+              "010111": "⠺", // W (puntos 2-4-5-6)
+              101101: "⠭", // X (puntos 1-3-4-6)
+              101111: "⠽", // Y (puntos 1-3-4-5-6)
+              101011: "⠵", // Z (puntos 1-3-5-6)
+              "000000": " ", // Espacio
             };
 
             const brailleChar = brailleMap[bits] || "";
@@ -393,10 +358,9 @@ export function QwertyBrailleInput({ value, onChange }) {
                 return nuevo;
               });
             }
-            // Limpiar el combo después de procesarlo
             comboActual.current = [];
           }
-        }, 300); // Ajusta este valor según necesites
+        }, 300);
 
         e.preventDefault();
       } else if (key === " ") {
@@ -427,33 +391,16 @@ export function QwertyBrailleInput({ value, onChange }) {
     setBuffer(value || "");
   }, [value]);
 
-  const handleFocus = () => {
-    focused.current = true;
-  };
-  const handleBlur = () => {
-    focused.current = false;
-    comboActual.current = [];
-  };
-
   return (
-    <div>
-      <label className="block mb-2 font-bold">QWERTY Braille (SDF JKL):</label>
+    <div className="w-full h-full">
       <textarea
         ref={ref}
-        className="w-full h-24 p-2 border rounded font-mono text-2xl"
+        className="w-full h-full bg-transparent text-[#333] resize-none outline-none text-xl placeholder-gray-400"
         value={buffer}
+        placeholder="Qwerty Braille (SDF JKL)"
         readOnly
-        style={{ background: "#f9f9f9" }}
-        tabIndex={0}
         aria-label="Área de entrada Braille QWERTY"
-        onFocus={handleFocus}
-        onBlur={handleBlur}
       />
-      <div className="text-sm text-gray-500 mt-2">
-        Mantén presionadas S, D, F, J, K, L para formar puntos Braille y
-        suéltalas juntas para escribir el carácter. Espacio: barra espaciadora.
-        Borrar: Backspace.
-      </div>
     </div>
   );
 }
@@ -477,7 +424,23 @@ export default function Traductor() {
   const [documentoSeleccionado, setDocumentoSeleccionado] = useState(null);
   const [documentoEstructurado, setDocumentoEstructurado] = useState([]);
 
+  // Nuevo estado para mostrar/ocultar traducciones guardadas
+  const [showSaved, setShowSaved] = useState(false);
+
   const navigate = useNavigate();
+  const auth = getAuth();
+  const db = getDatabase();
+
+  // Agregar verificación de autenticación con useEffect
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (!user) {
+        navigate("/login");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [auth, navigate]);
 
   const manejarCambioPestaña = (evento, nuevoValor) => {
     setPestaña(nuevoValor);
@@ -545,191 +508,232 @@ export default function Traductor() {
       alert("Por favor, seleccione un documento para cargar.");
       return;
     }
+
     const file = documentoSeleccionado;
     const extension = file.name.split(".").pop().toLowerCase();
 
     const procesarTextoDetectandoBraille = (textoPlano) => {
-      if (esBraille(textoPlano)) {
+      // Mejorar la detección de texto Braille
+      const esBrailleTexto = esBraille(textoPlano);
+      setDocumentoEstructurado([{ tipo: "párrafo", texto: textoPlano }]);
+
+      if (esBrailleTexto) {
+        // Si es Braille, convertir a texto
         setTextoEntrada(textoPlano);
-        setTextoTraducido(brailleATexto(textoPlano));
-        setDocumentoEstructurado([{ tipo: "párrafo", texto: textoPlano }]);
+        const textoConvertido = brailleATexto(textoPlano);
+        setTextoTraducido(textoConvertido);
       } else {
+        // Si es texto normal, convertir a Braille
         setTextoEntrada(textoPlano);
-        setTextoTraducido("");
-        setDocumentoEstructurado([{ tipo: "párrafo", texto: textoPlano }]);
+        const brailleConvertido = textoABraille(textoPlano);
+        setTextoTraducido(brailleConvertido);
       }
     };
 
-    if (extension === "pdf") {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const typedarray = new Uint8Array(e.target.result);
-        const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
-        let secciones = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const texto = content.items.map((item) => item.str).join(" ");
-          secciones.push({ tipo: "párrafo", texto });
-        }
-        const textoPlano = secciones.map((s) => s.texto).join("\n\n");
-        procesarTextoDetectandoBraille(textoPlano);
-        setDocumentoEstructurado(secciones);
-        // Mostrar el resultado traducido automáticamente
-        if (esBraille(textoPlano)) {
-          setTextoTraducido(brailleATexto(textoPlano));
-        } else {
-          setTextoTraducido(textoABraille(textoPlano));
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else if (extension === "docx") {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const arrayBuffer = e.target.result;
-        // Validar si el archivo es realmente un ZIP (DOCX)
-        const isZip = () => {
-          const arr = new Uint8Array(arrayBuffer);
-          // Los archivos ZIP empiezan con 0x50 0x4B (PK)
-          return arr[0] === 0x50 && arr[1] === 0x4b;
-        };
-        if (!isZip()) {
+    try {
+      switch (extension) {
+        case "pdf":
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            try {
+              const typedarray = new Uint8Array(e.target.result);
+              const pdf = await pdfjsLib.getDocument({ data: typedarray })
+                .promise;
+              let textoCompleto = "";
+
+              for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const textoPage = content.items
+                  .map((item) => item.str)
+                  .join(" ")
+                  .replace(/\s+/g, " ");
+                textoCompleto += textoPage + "\n\n";
+              }
+
+              procesarTextoDetectandoBraille(textoCompleto.trim());
+            } catch (error) {
+              alert("Error al procesar el PDF. Verifique que no esté dañado.");
+            }
+          };
+          reader.readAsArrayBuffer(file);
+          break;
+
+        case "docx":
+          const docxReader = new FileReader();
+          docxReader.onload = async (e) => {
+            try {
+              const arrayBuffer = e.target.result;
+              const result = await mammoth.extractRawText({ arrayBuffer });
+              procesarTextoDetectandoBraille(result.value.trim());
+            } catch (error) {
+              alert(
+                "Error al procesar el archivo DOCX. Verifique que no esté dañado."
+              );
+            }
+          };
+          docxReader.readAsArrayBuffer(file);
+          break;
+
+        case "txt":
+          const txtReader = new FileReader();
+          txtReader.onload = (e) => {
+            try {
+              const texto = e.target.result;
+              procesarTextoDetectandoBraille(texto.trim());
+            } catch (error) {
+              alert(
+                "Error al procesar el archivo TXT. Verifique la codificación del archivo."
+              );
+            }
+          };
+          txtReader.readAsText(file);
+          break;
+
+        default:
           alert(
-            "El archivo DOCX no es válido o está corrupto. Por favor, suba un archivo DOCX original de Word."
+            "Formato de archivo no soportado. Por favor, use PDF, DOCX o TXT."
           );
-          setDocumentoSeleccionado(null);
-          return;
-        }
-        try {
-          const result = await mammoth.extractRawText({ arrayBuffer });
-          const textoPlano = result.value;
-          procesarTextoDetectandoBraille(textoPlano);
-          // Estructura simple para descarga
-          setDocumentoEstructurado([{ tipo: "párrafo", texto: textoPlano }]);
-        } catch (err) {
-          alert(
-            "Error al procesar el archivo DOCX. Asegúrese de que el archivo no esté dañado."
-          );
-          setDocumentoSeleccionado(null);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else if (extension === "txt") {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const textoPlano = e.target.result;
-        procesarTextoDetectandoBraille(textoPlano);
-      };
-      reader.readAsText(file);
-    } else {
-      alert("Formato de archivo no soportado.");
+      }
+    } catch (error) {
+      console.error("Error al procesar el documento:", error);
+      alert("Error al procesar el documento. Intente con otro archivo.");
     }
   };
 
-  // Función para traducir y descargar el documento
+  // Modificar la función de descarga
   const manejarDescargarDocumento = async () => {
     if (!documentoEstructurado.length) {
       alert("Primero cargue y traduzca un documento.");
       return;
     }
-    const esDocBraille = esBraille(documentoEstructurado[0].texto);
-    const seccionesTraducidas = documentoEstructurado.map((seccion) => {
-      let textoTraducido = "";
-      if (seccion.tipo === "título" || seccion.tipo === "párrafo") {
-        textoTraducido = esDocBraille
-          ? brailleATexto(seccion.texto)
-          : textoABraille(seccion.texto);
-        // Si el resultado es Braille, aplicar formato estándar para Word
-        if (!esDocBraille) {
-          textoTraducido = formatearBrailleParaWord(textoTraducido);
-        }
-        return { ...seccion, texto: textoTraducido };
-      } else if (seccion.tipo === "tabla") {
-        // Traducir cada celda de la tabla
-        const filasTraducidas = seccion.filas.map((fila) =>
-          fila.map((celda) => {
-            let celdaTraducida = esDocBraille
-              ? brailleATexto(celda)
-              : textoABraille(celda);
-            if (!esDocBraille) {
-              celdaTraducida = formatearBrailleParaWord(celdaTraducida);
-            }
-            return celdaTraducida;
-          })
-        );
-        return { ...seccion, filas: filasTraducidas };
-      }
-      return seccion;
-    });
-    const doc = new Document({
-      sections: [
-        {
-          children: seccionesTraducidas.map((seccion) => {
-            if (seccion.tipo === "título") {
-              return new Paragraph({
-                text: seccion.texto,
-                heading:
-                  HeadingLevel[seccion.nivel || "HEADING_1"] ||
-                  HeadingLevel.HEADING_1,
-                style: "BrailleStyle",
-              });
-            } else if (seccion.tipo === "párrafo") {
-              return new Paragraph({
-                text: seccion.texto,
-                style: "BrailleStyle",
-              });
-            } else if (seccion.tipo === "tabla") {
-              return new Table({
-                rows: seccion.filas.map(
-                  (fila) =>
-                    new TableRow({
-                      children: fila.map(
-                        (celda) =>
-                          new TableCell({
-                            children: [
-                              new Paragraph({
-                                text: celda,
-                                style: "BrailleStyle",
-                              }),
-                            ],
-                          })
-                      ),
-                    })
-                ),
-              });
-            } else {
-              return new Paragraph({ text: "", style: "BrailleStyle" });
-            }
-          }),
-        },
-      ],
-      styles: {
-        paragraphStyles: [
+
+    try {
+      const esDocBraille = esBraille(documentoEstructurado[0].texto);
+      const doc = new Document({
+        sections: [
           {
-            id: "BrailleStyle",
-            name: "BrailleStyle",
-            run: {
-              font: "Consolas",
-              size: 28, // 14pt (tamaño grande y monoespaciado para Braille)
-            },
-            paragraph: {
-              spacing: { after: 0, before: 0 },
-            },
+            properties: {},
+            children: documentoEstructurado.map((seccion) => {
+              const textoTraducido = esDocBraille
+                ? brailleATexto(seccion.texto)
+                : textoABraille(seccion.texto);
+
+              return new Paragraph({
+                text: textoTraducido,
+                style: "BrailleStyle",
+                spacing: { after: 300, before: 300 },
+                alignment: "left",
+              });
+            }),
           },
         ],
-      },
-    });
-    const blob = await Packer.toBlob(doc);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = esDocBraille
-      ? "documento_traducido_texto.docx"
-      : "documento_traducido_braille.docx";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+        styles: {
+          paragraphStyles: [
+            {
+              id: "BrailleStyle",
+              name: "BrailleStyle",
+              run: {
+                font: "Consolas",
+                size: 28,
+              },
+              paragraph: {
+                spacing: { after: 240, before: 240 },
+                indent: { left: 720 }, // 0.5 inch left margin
+              },
+            },
+          ],
+        },
+      });
+
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = esDocBraille
+        ? "documento_traducido_texto.docx"
+        : "documento_traducido_braille.docx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error al generar el documento:", error);
+      alert("Error al generar el documento traducido. Intente nuevamente.");
+    }
+  };
+
+  // Modificar la función saveTranslation
+  const saveTranslation = async () => {
+    try {
+      const user = auth.currentUser;
+      console.log("Estado de autenticación:", !!user); // Debug
+
+      if (!user) {
+        console.log("No hay usuario autenticado"); // Debug
+        alert("Por favor, inicie sesión nuevamente");
+        navigate("/");
+        return;
+      }
+
+      if (!textoEntrada || !textoTraducido) {
+        alert("Por favor realice una traducción antes de guardar");
+        return;
+      }
+
+      const translationData = {
+        original: textoEntrada,
+        translated: textoTraducido,
+        type: modo,
+        timestamp: Date.now(),
+        userId: user.uid,
+      };
+
+      const newTranslationRef = await push(
+        ref(db, `users/${user.uid}/translations`),
+        translationData
+      );
+
+      if (newTranslationRef) {
+        alert("¡Traducción guardada exitosamente!");
+      }
+    } catch (error) {
+      console.error("Error detallado:", error); // Debug
+      if (error.code === "PERMISSION_DENIED") {
+        alert("Error de permisos. Por favor, inicie sesión nuevamente.");
+        navigate("/");
+      } else {
+        alert(`Error al guardar: ${error.message}`);
+      }
+    }
+  };
+
+  // Cargar traducción guardada en los campos de texto
+  const loadSavedTranslation = (item) => {
+    setTextoEntrada(item.original);
+    setTextoTraducido(item.translated);
+    setModo(item.type);
+    setShowSaved(false);
+  };
+
+  // Modificar la función para navegar a Qwerty
+  const handleQwertyNavigation = (e) => {
+    e.preventDefault();
+    navigate("/qwerty", { replace: false });
+  };
+
+  // Modificar la función handleSignOut
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setTextoEntrada("");
+      setTextoTraducido("");
+      setShowSaved(false);
+      navigate("/login");
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+      alert("Error al cerrar sesión. Por favor intente nuevamente.");
+    }
   };
 
   // En el return principal, reemplaza el contenido por el enrutador:
@@ -738,7 +742,7 @@ export default function Traductor() {
       <Route
         path="/"
         element={
-          <div className="min-h-screen bg-[#F5F5F5] text-[#333] w-full h-full">
+          <div className="relative min-h-screen bg-[#F5F5F5] text-[#333] w-full h-full">
             {/* Header */}
             <div className="w-full bg-[#E0E0E0] py-4 text-center text-3xl font-light tracking-wide">
               <span className="text-[#4C9FE2]">Traductor</span>Braille
@@ -845,7 +849,7 @@ export default function Traductor() {
                           </button>
                           <button
                             className="bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
-                            onClick={() => navigate("/qwerty")}
+                            onClick={handleQwertyNavigation}
                           >
                             Qwerty
                           </button>
@@ -860,14 +864,22 @@ export default function Traductor() {
                         </div>
                         {/* Botón Copiar solo si hay resultado */}
                         {textoTraducido && (
-                          <button
-                            className="mt-4 bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
-                            onClick={() => {
-                              navigator.clipboard.writeText(textoTraducido);
-                            }}
-                          >
-                            Copiar
-                          </button>
+                          <div className="flex gap-4">
+                            <button
+                              className="mt-4 bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
+                              onClick={() => {
+                                navigator.clipboard.writeText(textoTraducido);
+                              }}
+                            >
+                              Copiar
+                            </button>
+                            <button
+                              className="mt-4 bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
+                              onClick={saveTranslation}
+                            >
+                              Guardar
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -943,20 +955,22 @@ export default function Traductor() {
                             Documento seleccionado:{" "}
                             <strong>{documentoSeleccionado.name}</strong>
                           </p>
-                          <button
-                            onClick={manejarCargaDocumento}
-                            className="mt-4 bg-green-500 text-white py-2 px-5 rounded-full text-lg hover:bg-green-700 transition-transform duration-200 hover:scale-105 shadow-lg"
-                          >
-                            Cargar Documento
-                          </button>
-                          {documentoEstructurado.length > 0 && (
+                          <div className="flex flex-wrap gap-4 justify-center">
                             <button
-                              onClick={manejarDescargarDocumento}
-                              className="mt-4 bg-blue-500 text-white py-2 px-5 rounded-full text-lg hover:bg-blue-700 transition-transform duration-200 hover:scale-105 shadow-lg"
+                              onClick={manejarCargaDocumento}
+                              className="mt-4 bg-green-500 text-white py-2 px-5 rounded-full text-lg hover:bg-green-700 transition-transform duration-200 hover:scale-105 shadow-lg"
                             >
-                              Descargar Documento Traducido
+                              Cargar Documento
                             </button>
-                          )}
+                            {documentoEstructurado.length > 0 && (
+                              <button
+                                onClick={manejarDescargarDocumento}
+                                className="mt-4 bg-blue-500 text-white py-2 px-5 rounded-full text-lg hover:bg-blue-700 transition-transform duration-200 hover:scale-105 shadow-lg"
+                              >
+                                Descargar Documento Traducido
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <p className="text-gray-500 mt-4">
@@ -993,21 +1007,35 @@ export default function Traductor() {
               >
                 Limpiar
               </button>
+              {pestaña === 0 && ( // Solo mostrar el botón Historial en la pestaña de texto
+                <button
+                  className="bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
+                  onClick={() => setShowSaved(!showSaved)}
+                >
+                  Historial
+                </button>
+              )}
               <button
                 className="bg-red-500 text-white py-2 px-5 rounded-full text-lg hover:bg-red-700 transition-transform duration-200 hover:scale-105 shadow-lg"
-                onClick={async () => {
-                  const auth = getAuth();
-                  await signOut(auth);
-                  navigate("/");
-                }}
+                onClick={handleSignOut}
               >
                 Cerrar Sesión
               </button>
             </div>
+
+            {/* Componente de traducciones guardadas */}
+            {showSaved && (
+              <SavedTranslations
+                onSelect={loadSavedTranslation}
+                onClose={() => setShowSaved(false)}
+              />
+            )}
           </div>
         }
       />
       <Route path="/qwerty" element={<QwertyBraillePage />} />
+      <Route path="/login" element={<Navigate to="/login" />} />
+      <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
 }

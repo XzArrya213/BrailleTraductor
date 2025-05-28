@@ -11,12 +11,14 @@ import {
   EmailAuthProvider,
   linkWithCredential,
 } from "firebase/auth";
+import { useNavigate } from "react-router-dom";
 
 const auth = getAuth(appFirebase);
 
 export default function Form() {
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   const authFunction = async (e) => {
     e.preventDefault();
@@ -27,22 +29,26 @@ export default function Form() {
 
     try {
       if (registering) {
-        await createUserWithEmailAndPassword(auth, email, password)
-          .then(async (newUser) => {
-            await updateProfile(newUser.user, { displayName: NombreCompleto });
-          })
-          .catch((err) => {
-            if (err.code === "auth/email-already-in-use") {
-              setError("Correo ya registrado");
-            } else {
-              setError("Error al registrarse. Inténtalo de nuevo.");
-            }
-          });
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          email,
+          password
+        );
+        await updateProfile(userCredential.user, {
+          displayName: NombreCompleto,
+        });
+        navigate("/", { replace: true });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
+        navigate("/", { replace: true });
       }
     } catch (err) {
-      setError("Correo o contraseña incorrectos.");
+      console.error("Error de autenticación:", err);
+      setError(
+        err.code === "auth/email-already-in-use"
+          ? "Correo ya registrado"
+          : "Correo o contraseña incorrectos."
+      );
     }
   };
 
@@ -50,26 +56,9 @@ export default function Form() {
     const provider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      console.log("Usuario autenticado con Google:", user);
-
-      // Verificar si el usuario ya tiene una contraseña asociada
-      if (!user.emailVerified) {
-        const email = user.email;
-        const password = prompt(
-          `Has iniciado sesión con Google. Por favor, ingresa tu contraseña para vincularla con tu cuenta:`
-        );
-
-        if (password) {
-          const credential = EmailAuthProvider.credential(email, password);
-          await linkWithCredential(user, credential);
-          alert(
-            "Cuenta vinculada correctamente. Ahora puedes iniciar sesión con tu correo y contraseña."
-          );
-        }
-      }
+      navigate("/", { replace: true });
     } catch (err) {
+      console.error("Error al iniciar sesión con Google:", err);
       setError("Error al iniciar sesión con Google.");
     }
   };
