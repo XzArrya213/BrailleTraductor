@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from "react";
 import Traductor from "./Components/Translator";
 import Form from "./Components/Form";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import appFirebase from "./credenciales";
-
-const auth = getAuth(appFirebase);
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase/config";
 
 export default function App() {
   const [usuarioAutenticado, setUsuarioAutenticado] = useState(null);

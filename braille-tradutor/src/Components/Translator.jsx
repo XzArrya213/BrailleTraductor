@@ -3,14 +3,15 @@ import PropTypes from "prop-types";
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import Box from "@mui/material/Box";
-import { getAuth, signOut } from "firebase/auth";
-import { getDatabase, ref, push } from "firebase/database";
+import { signOut } from "firebase/auth";
+import { ref, push } from "firebase/database";
 import { Route, Routes, useNavigate, Navigate } from "react-router-dom";
 import * as pdfjsLib from "pdfjs-dist/build/pdf";
 import mammoth from "mammoth";
 import { Document, Packer, Paragraph } from "docx";
 import QwertyBraillePage from "./QwertyBraillePage";
 import SavedTranslations from "./SavedTranslations";
+import { auth, db } from "../firebase/config";
 
 // Mapa de Braille en español (ampliado y corregido para signos y puntuación)
 const mapaBraille = {
@@ -428,8 +429,6 @@ export default function Traductor() {
   const [showSaved, setShowSaved] = useState(false);
 
   const navigate = useNavigate();
-  const auth = getAuth();
-  const db = getDatabase();
 
   // Agregar verificación de autenticación con useEffect
   useEffect(() => {
@@ -440,7 +439,7 @@ export default function Traductor() {
     });
 
     return () => unsubscribe();
-  }, [auth, navigate]);
+  }, [navigate]);
 
   const manejarCambioPestaña = (evento, nuevoValor) => {
     setPestaña(nuevoValor);

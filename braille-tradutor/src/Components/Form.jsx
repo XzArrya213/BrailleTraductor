@@ -1,32 +1,24 @@
 import { useState } from "react";
-import appFirebase from "../credenciales";
 import {
-  getAuth,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   updateProfile,
   GoogleAuthProvider,
   signInWithPopup,
-  updatePassword,
-  EmailAuthProvider,
-  linkWithCredential,
 } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
-
-const auth = getAuth(appFirebase);
+import { auth } from "../firebase/config";
 
 export default function Form() {
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState(null);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const navigate = useNavigate();
 
   const authFunction = async (e) => {
     e.preventDefault();
     setError(null);
-    const NombreCompleto = e.target.NombreCompleto?.value || null;
-    const email = e.target.email.value;
-    const password = e.target.password.value;
-
     try {
       if (registering) {
         const userCredential = await createUserWithEmailAndPassword(
@@ -34,9 +26,11 @@ export default function Form() {
           email,
           password
         );
-        await updateProfile(userCredential.user, {
-          displayName: NombreCompleto,
-        });
+        if (e.target.NombreCompleto?.value) {
+          await updateProfile(userCredential.user, {
+            displayName: e.target.NombreCompleto.value,
+          });
+        }
         navigate("/", { replace: true });
       } else {
         await signInWithEmailAndPassword(auth, email, password);
@@ -105,6 +99,8 @@ export default function Form() {
                 name="email"
                 className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#4C9FE2]"
                 placeholder="Tu Correo Electrónico"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
@@ -117,6 +113,8 @@ export default function Form() {
                 name="password"
                 className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-[#4C9FE2]"
                 placeholder="Tu Contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
 

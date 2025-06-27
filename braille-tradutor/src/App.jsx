@@ -5,7 +5,8 @@ import {
   Route,
   Navigate,
 } from "react-router-dom";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import Translator from "./Components/Translator";
 import QwertyBraillePage from "./Components/QwertyBraillePage";
 import Login from "./Components/Login";
@@ -13,15 +14,20 @@ import Login from "./Components/Login";
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const auth = getAuth();
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        setUser(currentUser);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      setError(err.message || "Error inesperado");
       setLoading(false);
-    });
-    return () => unsubscribe();
-  }, [auth]);
+    }
+  }, []);
 
   if (loading) {
     return (
@@ -31,17 +37,34 @@ function App() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-100">
+        <div className="text-2xl text-red-600">Error: {error}</div>
+      </div>
+    );
+  }
+
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={user ? <Navigate to="/" /> : <Login />} />
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/" replace /> : <Login />}
+        />
         <Route
           path="/"
-          element={user ? <Translator /> : <Navigate to="/login" />}
+          element={user ? <Translator /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/qwerty"
-          element={user ? <QwertyBraillePage /> : <Navigate to="/login" />}
+          element={
+            user ? <QwertyBraillePage /> : <Navigate to="/login" replace />
+          }
+        />
+        <Route
+          path="*"
+          element={<Navigate to={user ? "/" : "/login"} replace />}
         />
       </Routes>
     </Router>

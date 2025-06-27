@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { getAuth } from "firebase/auth";
-import { getDatabase, ref, onValue, remove } from "firebase/database";
+import { onAuthStateChanged } from "firebase/auth";
+import { ref, onValue, remove } from "firebase/database";
 import { useNavigate } from "react-router-dom";
+import { auth, db } from "../firebase/config";
 
 export default function SavedTranslations({ onSelect, onClose }) {
   const navigate = useNavigate();
-  const auth = getAuth();
-  const db = getDatabase();
   const [translations, setTranslations] = useState([]);
 
   useEffect(() => {
     // Verificar autenticación
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (!user) {
         navigate("/");
         return;
@@ -55,7 +54,7 @@ export default function SavedTranslations({ onSelect, onClose }) {
       unsubscribe();
       unsubscribeAuth();
     };
-  }, [auth, db, navigate]);
+  }, [navigate]);
 
   const handleDelete = async (id) => {
     try {
