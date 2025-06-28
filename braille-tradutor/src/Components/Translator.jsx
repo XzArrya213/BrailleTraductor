@@ -428,6 +428,10 @@ export default function Traductor() {
   // Nuevo estado para mostrar/ocultar traducciones guardadas
   const [showSaved, setShowSaved] = useState(false);
 
+  // STT y TTS
+  const recognitionRef = useRef(null);
+  const [escuchando, setEscuchando] = useState(false);
+
   const navigate = useNavigate();
 
   // Agregar verificación de autenticación con useEffect
@@ -440,6 +444,25 @@ export default function Traductor() {
 
     return () => unsubscribe();
   }, [navigate]);
+
+  // Inicializar SpeechRecognition solo si está disponible
+  useEffect(() => {
+    if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.lang = "es-ES";
+      recognitionRef.current.continuous = false;
+      recognitionRef.current.interimResults = false;
+      recognitionRef.current.onresult = (event) => {
+        const texto = event.results[0][0].transcript;
+        setTextoEntrada((prev) => prev + (prev ? " " : "") + texto);
+        setEscuchando(false);
+      };
+      recognitionRef.current.onend = () => setEscuchando(false);
+      recognitionRef.current.onerror = () => setEscuchando(false);
+    }
+  }, []);
 
   const manejarCambioPestaña = (evento, nuevoValor) => {
     setPestaña(nuevoValor);
@@ -743,6 +766,31 @@ export default function Traductor() {
     }
   };
 
+  // --- STT y TTS handlers ---
+  const handleSTT = () => {
+    if (recognitionRef.current) {
+      setEscuchando(true);
+      recognitionRef.current.start();
+    } else {
+      alert("El reconocimiento de voz no es compatible con este navegador.");
+    }
+  };
+
+  const handleTTS = () => {
+    if ("speechSynthesis" in window) {
+      let textoParaLeer = textoTraducido;
+      if (modo === "textoABraille") {
+        // Si el resultado es Braille, conviértelo a texto antes de leer
+        textoParaLeer = brailleATexto(textoTraducido);
+      }
+      const utter = new window.SpeechSynthesisUtterance(textoParaLeer);
+      utter.lang = "es-ES";
+      window.speechSynthesis.speak(utter);
+    } else {
+      alert("La síntesis de voz no es compatible con este navegador.");
+    }
+  };
+
   // En el return principal, reemplaza el contenido por el enrutador:
   return (
     <Routes>
@@ -811,10 +859,8 @@ export default function Traductor() {
                       {/* Contenedor de entrada */}
                       <div className="flex-1 flex flex-col items-center">
                         <div
-                          className={`w-full max-w-[800px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start transition-all duration-200 ${
-                            entradaEnfocada
-                              ? "border-2 border-black"
-                              : "border-0"
+                          className={`w-full max-w-[800px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start transition-all duration-200 relative ${
+                            entradaEnfocada ? "border-2 border-black" : "border-0"
                           }`}
                         >
                           <textarea
@@ -826,6 +872,19 @@ export default function Traductor() {
                             onFocus={() => setEntradaEnfocada(true)}
                             onBlur={() => setEntradaEnfocada(false)}
                           ></textarea>
+                          {/* Botón STT */}
+                          <button
+                            type="button"
+                            onClick={handleSTT}
+                            className={`p-2 rounded-full border bg-white absolute left-2 bottom-2 ${
+                              escuchando ? "bg-red-200 animate-pulse" : ""
+                            }`}
+                            title="Dictar texto"
+                            tabIndex={0}
+                            style={{ cursor: "pointer" }}
+                          >
+                            🎤
+                          </button>
                         </div>
                         <div className="flex flex-wrap gap-2 mt-4 justify-center">
                           <button
@@ -864,13 +923,30 @@ export default function Traductor() {
                       </div>
                       {/* Contenedor de resultado alineado */}
                       <div className="flex-1 flex flex-col items-center">
-                        <div className="w-full max-w-[900px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start overflow-auto">
+                        <div className="w-full max-w-[900px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start overflow-auto relative">
                           <textarea
                             className="w-full h-full bg-transparent text-[#333] resize-none placeholder-[#333] outline-none border-0 focus:outline-none rounded-lg text-xl"
                             style={{ boxShadow: "none" }}
                             value={textoTraducido}
                             readOnly
+                            tabIndex={0} // Permite enfocar el área de texto
                           />
+                          {/* Botón TTS */}
+                          <button
+                            type="button"
+                            onClick={handleTTS}
+                            className="p-2 rounded-full border bg-white absolute left-2 bottom-2"
+                            title="Escuchar traducción"
+                            disabled={!textoTraducido}
+                            tabIndex={0} // Permite enfocar el botón con teclado
+                            style={{
+                              cursor: textoTraducido
+                                ? "pointer"
+                                : "not-allowed",
+                            }}
+                          >
+                            🔊
+                          </button>
                         </div>
                         {/* Botón Copiar solo si hay resultado */}
                         {textoTraducido && (
