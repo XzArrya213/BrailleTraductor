@@ -609,22 +609,30 @@ export default function Traductor() {
 
     try {
       const esDocBraille = esBraille(documentoEstructurado[0].texto);
+      // Unir todos los textos en un solo string y dividir por líneas
+      const textoCompleto = documentoEstructurado
+        .map((s) =>
+          esDocBraille ? brailleATexto(s.texto) : textoABraille(s.texto)
+        )
+        .join("\n");
+      // Eliminar saltos de página y márgenes manuales
+      const lineas = textoCompleto
+        .replace(/\f/g, "")
+        .split(/\r?\n/)
+        .map((l) => l.trimEnd());
       const doc = new Document({
         sections: [
           {
             properties: {},
-            children: documentoEstructurado.map((seccion) => {
-              const textoTraducido = esDocBraille
-                ? brailleATexto(seccion.texto)
-                : textoABraille(seccion.texto);
-
-              return new Paragraph({
-                text: textoTraducido,
-                style: "BrailleStyle",
-                spacing: { after: 300, before: 300 },
-                alignment: "left",
-              });
-            }),
+            children: lineas.map(
+              (linea) =>
+                new Paragraph({
+                  text: linea,
+                  style: "BrailleStyle",
+                  spacing: { after: 300, before: 300 },
+                  alignment: "left",
+                })
+            ),
           },
         ],
         styles: {
@@ -638,7 +646,7 @@ export default function Traductor() {
               },
               paragraph: {
                 spacing: { after: 240, before: 240 },
-                indent: { left: 720 }, // 0.5 inch left margin
+                indent: { left: 720 },
               },
             },
           ],
@@ -856,10 +864,13 @@ export default function Traductor() {
                       </div>
                       {/* Contenedor de resultado alineado */}
                       <div className="flex-1 flex flex-col items-center">
-                        <div className="w-full max-w-[900px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start">
-                          <span className="break-all text-[#333]">
-                            {textoTraducido}
-                          </span>
+                        <div className="w-full max-w-[900px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start overflow-auto">
+                          <textarea
+                            className="w-full h-full bg-transparent text-[#333] resize-none placeholder-[#333] outline-none border-0 focus:outline-none rounded-lg text-xl"
+                            style={{ boxShadow: "none" }}
+                            value={textoTraducido}
+                            readOnly
+                          />
                         </div>
                         {/* Botón Copiar solo si hay resultado */}
                         {textoTraducido && (

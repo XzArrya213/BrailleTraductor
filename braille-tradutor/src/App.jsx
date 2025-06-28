@@ -17,22 +17,34 @@ function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let unsubscribe;
     try {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      unsubscribe = onAuthStateChanged(auth, (currentUser) => {
         setUser(currentUser);
         setLoading(false);
       });
-      return () => unsubscribe();
     } catch (err) {
       setError(err.message || "Error inesperado");
       setLoading(false);
     }
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   if (loading) {
+    // Evita cualquier renderizado de rutas o componentes mientras carga
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100">
-        <div className="text-2xl text-gray-600">Cargando...</div>
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f3f4f6",
+        }}
+      >
+        <div style={{ fontSize: 24, color: "#4b5563" }}>Cargando...</div>
       </div>
     );
   }
