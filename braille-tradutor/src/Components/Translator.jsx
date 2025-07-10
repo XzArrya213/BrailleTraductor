@@ -860,7 +860,9 @@ export default function Traductor() {
                       <div className="flex-1 flex flex-col items-center">
                         <div
                           className={`w-full max-w-[800px] h-48 p-4 rounded-lg bg-[#F5F5F5] shadow-md flex items-start transition-all duration-200 relative ${
-                            entradaEnfocada ? "border-2 border-black" : "border-0"
+                            entradaEnfocada
+                              ? "border-2 border-black"
+                              : "border-0"
                           }`}
                         >
                           <textarea
