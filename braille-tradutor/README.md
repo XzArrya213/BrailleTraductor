@@ -1,70 +1,62 @@
-# Getting Started with Create React App
+# Traductor Braille - Documentación del Proyecto
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Descripción General
 
-## Available Scripts
+Este sistema es una aplicación web desarrollada en React que permite traducir texto a Braille y viceversa, guardar traducciones, descargar documentos traducidos y utilizar entrada QWERTY para personas ciegas. Incluye autenticación de usuarios y almacenamiento de traducciones usando Firebase.
 
-In the project directory, you can run:
+## Funcionalidades principales
 
-### `npm start`
+- Traducción de texto a Braille y de Braille a texto.
+- Traducción de documentos PDF, DOCX y TXT.
+- Descarga de documentos traducidos en formato DOCX.
+- Entrada de texto Braille mediante teclado QWERTY (combinaciones SDF JKL).
+- Guardado y consulta de historial de traducciones por usuario.
+- Autenticación de usuarios con Firebase.
+- Interfaz accesible y responsiva.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Estructura del Proyecto
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- **src/Components/**: Componentes principales de la interfaz (Translator, Login, QwertyBraillePage, etc).
+- **src/firebase/**: Configuración de Firebase (autenticación y base de datos).
+- **backend/**: Lógica de servidor (si aplica, Node.js/Express).
+- **public/**: Archivos estáticos e imágenes.
 
-### `npm test`
+## Endpoints y funcionalidades clave
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Actualmente la lógica principal de traducción y autenticación se maneja en el frontend con React y Firebase. Si se usa backend, los endpoints típicos serían:
 
-### `npm run build`
+- `POST /api/login` - Iniciar sesión de usuario.
+- `POST /api/translate` - Traducir texto a Braille o viceversa.
+- `GET /api/translations` - Obtener historial de traducciones del usuario.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Actualizaciones y mejoras implementadas
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+- Integración de Firebase para autenticación y almacenamiento de traducciones.
+- Traducción de documentos PDF, DOCX y TXT.
+- Descarga de documentos traducidos en formato DOCX.
+- Entrada QWERTY para Braille (personas ciegas).
+- Panel de historial de traducciones guardadas.
+- Mejoras en la detección automática de texto Braille.
+- Interfaz mejorada y responsiva con Material UI y Tailwind CSS.
+- Manejo de errores y validaciones en carga de archivos y autenticación.
+- Separación de componentes y lógica para facilitar el mantenimiento.
+- Actualizaciones frecuentes y control de versiones en GitHub.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Instalación y uso
 
-### `npm run eject`
+1. Clona el repositorio.
+2. Ejecuta `npm install` para instalar dependencias.
+3. Ejecuta `npm start` para iniciar la aplicación en modo desarrollo.
+4. Accede a [http://localhost:3000](http://localhost:3000) en tu navegador.
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Pruebas
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Puedes ejecutar pruebas básicas con:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+```
+npm test
+```
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Créditos y agradecimientos
 
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Desarrollado por XzArrya213 y colaboradores. Basado en Create React App y usando Firebase, Material UI, Tailwind CSS y docx.
