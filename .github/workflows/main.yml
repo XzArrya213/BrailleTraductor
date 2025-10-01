@@ -1,0 +1,46 @@
+# Este es un nombre descriptivo para tu flujo de trabajo
+name: Deploy braille-traductor to production
+
+# Define el evento que activará este flujo de trabajo
+# En este caso, cada vez que se haga un "push" a la rama 'main'
+on:
+  push:
+    branches:
+      - main
+
+# Define las tareas (jobs) que se ejecutarán
+jobs:
+  # El nombre de la tarea es 'deploy'
+  deploy:
+    # Este 'job' se ejecutará en la última versión de Ubuntu
+    runs-on: ubuntu-latest
+    
+    # Aquí definimos los pasos que se seguirán en el 'job'
+    steps:
+      # Paso 1: Clonar el repositorio
+      # Esta acción de GitHub descarga tu código en la máquina virtual
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Paso 2: Instalar las dependencias de tu proyecto de Node.js
+      - name: Install Dependencies
+        run: npm install
+
+      # Paso 3: Construir el proyecto
+      - name: Build Project
+        run: npm run build
+
+      # Paso 4: Desplegar el proyecto en el servidor usando SSH
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # Este es el script que se ejecutará en tu servidor
+            # Mueve los archivos compilados de la carpeta 'build' a tu servidor
+            sudo cp -r /home/runner/work/BrailleTraductor/BrailleTraductor/build/* /var/www/html/
+            
+            # Reinicia el servicio de tu servidor web para que los cambios surtan efecto
+            sudo systemctl restart apache2
