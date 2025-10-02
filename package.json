@@ -16,6 +16,9 @@
     "tailwindcss": "^3.4.17"
   },
   "scripts": {
-    "run": "npm run dev"
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
   }
 }
