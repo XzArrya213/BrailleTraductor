@@ -49,7 +49,7 @@ export default function Form() {
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider); // <-- ¡Aquí se eliminó la variable 'result'!
       navigate("/", { replace: true });
     } catch (err) {
       console.error("Error al iniciar sesión con Google:", err);
