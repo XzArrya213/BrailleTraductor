@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+﻿import React, { useState, useCallback, useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
@@ -102,6 +102,11 @@ const contraccionesBrailleInvertido = Object.entries(
 }, {});
 
 // Invertir el mapa para decodificar
+// const arduinoFilters = [
+//   { usbVendorId: 0x2341, usbProductId: 0x0043 }, // Arduino UNO
+//   { usbVendorId: 0x2341, usbProductId: 0x0001 }, // Arduino Mega
+//   { usbVendorId: 0x0403, usbProductId: 0x6001 }, // FTDI clones
+// ];
 const mapaBrailleInvertido = Object.entries(mapaBraille).reduce(
   (acc, [k, v]) => {
     acc[v] = k;
@@ -428,6 +433,11 @@ export default function Traductor() {
   // Nuevo estado para mostrar/ocultar traducciones guardadas
   const [showSaved, setShowSaved] = useState(false);
 
+  // Estado de conexion con Arduino
+  const [arduinoPort, setArduinoPort] = useState(null);
+  const [arduinoStatus, setArduinoStatus] = useState("desconectado");
+  const [arduinoError, setArduinoError] = useState(null);
+
   // STT y TTS
   const recognitionRef = useRef(null);
   const [escuchando, setEscuchando] = useState(false);
@@ -464,6 +474,12 @@ export default function Traductor() {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serial" in navigator)) {
+      setArduinoStatus("no soportado");
+    }
+  }, []);
+
   const manejarCambioPestaña = (evento, nuevoValor) => {
     setPestaña(nuevoValor);
     // Limpiar estados al cambiar de pestaña
@@ -477,6 +493,193 @@ export default function Traductor() {
     setDocumentoSeleccionado(null);
     setDocumentoEstructurado([]);
   };
+
+  const manejarDesconectarArduino = useCallback(async () => {
+    if (!arduinoPort) {
+      return;
+    }
+    try {
+      await arduinoPort.close();
+      setArduinoError(null);
+      setArduinoStatus("desconectado");
+    } catch (error) {
+      console.error("Error al cerrar el puerto de Arduino:", error);
+      setArduinoError(error && error.message ? error.message : String(error));
+      setArduinoStatus("error");
+    } finally {
+      setArduinoPort(null);
+    }
+  }, [arduinoPort]);
+
+  const enviarComandoArduino = useCallback(
+    async (mensaje) => {
+      if (!arduinoPort || !arduinoPort.writable) {
+        setArduinoError("Puerto serie no disponible");
+        return false;
+      }
+
+      const writer = arduinoPort.writable.getWriter();
+      try {
+        await writer.write(new TextEncoder().encode(mensaje));
+        return true;
+      } catch (error) {
+        console.error("Error al enviar comando al dispositivo serie:", error);
+        setArduinoStatus("error");
+        setArduinoError(error && error.message ? error.message : String(error));
+        return false;
+      } finally {
+        writer.releaseLock();
+      }
+    },
+    [arduinoPort]
+  );
+
+  const manejarDetectarArduino = useCallback(async () => {
+    if (typeof navigator === "undefined" || !("serial" in navigator)) {
+      alert("Este navegador no soporta Web Serial.");
+      return;
+    }
+
+    try {
+      setArduinoStatus("buscando");
+      setArduinoError(null);
+      if (arduinoPort) {
+        await manejarDesconectarArduino();
+      }
+      // const port = await navigator.serial.requestPort({ filters: arduinoFilters });
+      const port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+      setArduinoPort(port);
+      setArduinoStatus("conectado");
+    } catch (error) {
+      const nombreError = error && error.name ? error.name : "";
+      if (nombreError === "NotFoundError" || nombreError === "AbortError") {
+        setArduinoStatus("desconectado");
+        setArduinoError(null);
+      } else {
+        console.error("Fallo al conectar con un dispositivo serie:", error);
+        setArduinoStatus("error");
+        setArduinoError(error && error.message ? error.message : String(error));
+      }
+    }
+  }, [arduinoPort, manejarDesconectarArduino]);
+
+  // useEffect(() => {
+  //   if (typeof navigator === "undefined" || !("serial" in navigator)) {
+  //     return;
+  //   }
+  //   if (arduinoPort) {
+  //     return;
+  //   }
+
+  //   let cancelado = false;
+
+  //   const intentarReconectar = async () => {
+  //     try {
+  //       const ports = await navigator.serial.getPorts();
+  //       if (!ports.length) {
+  //         return;
+  //       }
+
+  //       // Tomar el primer dispositivo disponible; filtros comentados para permitir todos los puertos.
+  //       const candidato = ports[0];
+
+  //       if (!candidato) {
+  //         return;
+  //       }
+
+  //       if (!candidato.readable) {
+  //         await candidato.open({ baudRate: 9600 });
+  //       }
+
+  //       if (!cancelado) {
+  //         setArduinoPort(candidato);
+  //         setArduinoStatus("conectado");
+  //         setArduinoError(null);
+  //       } else if (typeof candidato.close === "function") {
+  //         await candidato.close();
+  //       }
+  //     } catch (error) {
+  //       if (!cancelado) {
+  //         console.error("Error al reconectar un dispositivo serie:", error);
+  //         setArduinoStatus("desconectado");
+  //         setArduinoError(error && error.message ? error.message : String(error));
+  //       }
+  //     }
+  //   };
+
+  //   intentarReconectar();
+
+  //   return () => {
+  //     cancelado = true;
+  //   };
+  // }, [arduinoPort]);
+
+  useEffect(() => {
+    if (typeof navigator === "undefined" || !("serial" in navigator)) {
+      return;
+    }
+
+    const handleConnectEvent = () => {
+      if (!arduinoPort) {
+        setArduinoStatus("disponible");
+        setArduinoError(null);
+      }
+    };
+
+    const handleDisconnectEvent = (event) => {
+      if (arduinoPort && event.target === arduinoPort) {
+        manejarDesconectarArduino().catch((error) => {
+          console.error("Error al desconectar el dispositivo serie:", error);
+        });
+      } else {
+        setArduinoPort(null);
+        setArduinoStatus("desconectado");
+        setArduinoError(null);
+      }
+    };
+
+    navigator.serial.addEventListener("connect", handleConnectEvent);
+    navigator.serial.addEventListener("disconnect", handleDisconnectEvent);
+
+    return () => {
+      navigator.serial.removeEventListener("connect", handleConnectEvent);
+      navigator.serial.removeEventListener("disconnect", handleDisconnectEvent);
+    };
+  }, [arduinoPort, manejarDesconectarArduino]);
+
+  useEffect(() => {
+    return () => {
+      if (arduinoPort && typeof arduinoPort.close === "function") {
+        try {
+          const resultado = arduinoPort.close();
+          if (resultado && typeof resultado.catch === "function") {
+            resultado.catch((error) => {
+              console.error(
+                "Error al cerrar el puerto serie al limpiar:",
+                error
+              );
+            });
+          }
+        } catch (error) {
+          console.error("Error al cerrar el puerto serie al limpiar:", error);
+        }
+      }
+    };
+  }, [arduinoPort]);
+
+  const etiquetasEstadoArduino = {
+    conectado: "Arduino conectado",
+    buscando: "Buscando dispositivo...",
+    error: "Error al conectar con un dispositivo serie",
+    "no soportado": "Web Serial no soportado en este navegador",
+    disponible: "Dispositivo serie detectado. Puedes conectarlo.",
+    desconectado: "Sin dispositivo detectado",
+  };
+  const etiquetaEstadoArduino =
+    etiquetasEstadoArduino[arduinoStatus] || "Sin dispositivo detectado";
+  const botonArduinoDeshabilitado =
+    arduinoStatus === "no soportado" || arduinoStatus === "buscando";
 
   // Manejador para seleccionar imagen
   const manejarSeleccionImagen = useCallback(
@@ -817,6 +1020,7 @@ export default function Traductor() {
                 }}
               >
                 <Tabs
+
                   value={pestaña}
                   onChange={manejarCambioPestaña}
                   aria-label="pestañas de entrada"
@@ -870,7 +1074,7 @@ export default function Traductor() {
                             style={{ boxShadow: "none" }}
                             placeholder="Ingrese el texto aquí"
                             value={textoEntrada}
-                            onChange={(e) => setTextoEntrada(e.target.value)}
+                            onChange={(e) => setTextoEntrada(e.target.value) }
                             onFocus={() => setEntradaEnfocada(true)}
                             onBlur={() => setEntradaEnfocada(false)}
                           ></textarea>
@@ -1095,7 +1299,34 @@ export default function Traductor() {
               >
                 Limpiar
               </button>
-              {pestaña === 0 && ( // Solo mostrar el botón Historial en la pestaña de texto
+              <button
+                className={`${
+                  arduinoPort
+                    ? "bg-yellow-500 hover:bg-yellow-600"
+                    : "bg-purple-500 hover:bg-purple-700"
+                } text-white py-2 px-5 rounded-full text-lg transition-transform duration-200 hover:scale-105 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed`}
+                onClick={
+                  arduinoPort
+                    ? manejarDesconectarArduino
+                    : manejarDetectarArduino
+                }
+                disabled={botonArduinoDeshabilitado}
+              >
+                {arduinoPort
+                  ? "Desconectar dispositivo"
+                  : arduinoStatus === "buscando"
+                  ? "Buscando..."
+                  : "Detectar dispositivo"}
+              </button>
+              {arduinoPort && (
+                <button
+                  className="bg-gray-500 text-white py-2 px-5 rounded-full text-lg hover:bg-gray-700 transition-transform duration-200 hover:scale-105 shadow-lg"
+                  onClick={() => enviarComandoArduino("T")}
+                >
+                  Parpadear LED
+                </button>
+              )}
+              {pestaña === 0 && ( // Solo mostrar el boton Historial en la pestana de texto
                 <button
                   className="bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
                   onClick={() => setShowSaved(!showSaved)}
@@ -1107,10 +1338,15 @@ export default function Traductor() {
                 className="bg-red-500 text-white py-2 px-5 rounded-full text-lg hover:bg-red-700 transition-transform duration-200 hover:scale-105 shadow-lg"
                 onClick={handleSignOut}
               >
-                Cerrar Sesión
+                Cerrar Sesion
               </button>
+              <div className="basis-full text-center text-sm text-gray-600 mt-2">
+                <p>{etiquetaEstadoArduino}</p>
+                {arduinoError && (
+                  <p className="text-red-500 mt-1">{arduinoError}</p>
+                )}
+              </div>
             </div>
-
             {/* Componente de traducciones guardadas */}
             {showSaved && (
               <SavedTranslations
@@ -1129,3 +1365,6 @@ export default function Traductor() {
 }
 
 export { textoABraille, brailleATexto };
+
+
+
