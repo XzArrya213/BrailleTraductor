@@ -365,11 +365,19 @@ const PrinterPanel = ({
     }
   }, [activePage, pages.length]);
 
+  useEffect(() => {
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [logs, showLogs]);
+
   const currentLines = pages[activePage] || createEmptyPage();
   const pageValue = currentLines.join("\n");
   const canRemovePage = pages.length > 1;
   const actionButtonBase =
     "min-w-[150px] px-4 py-2 rounded-full text-sm md:text-base font-medium transition-transform duration-200 hover:scale-105 shadow text-center";
+
+  const logsContainerRef = useRef(null);
 
   const setTextareaRef = useCallback(
     (pageIndex, element) => {
@@ -492,7 +500,10 @@ const PrinterPanel = ({
               Últimos {logs ? logs.length : 0} eventos
             </span>
           </div>
-          <div className="h-48 overflow-y-auto bg-slate-900 text-slate-100 rounded-md p-3 font-mono text-xs space-y-2">
+          <div
+          ref={logsContainerRef}
+          className="h-48 overflow-y-auto bg-slate-900 text-slate-100 rounded-md p-3 font-mono text-xs space-y-2"
+        >
             {logs && logs.length ? (
               logs.map((log) => (
                 <div key={log.id} className="whitespace-pre-wrap">
