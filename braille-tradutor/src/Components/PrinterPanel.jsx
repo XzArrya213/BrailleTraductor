@@ -10,8 +10,7 @@ const TEXTAREA_PADDING_X_REM = 1;
 const TEXTAREA_PADDING_Y_REM = 0;
 const LINE_STEP_REM = LINE_HEIGHT_EM * FONT_SIZE_REM;
 const PAGE_HEIGHT_REM = LINE_STEP_REM * MAX_LINES_PER_PAGE;
-
-const debug = false
+const BRA_PAGE_SEPARATOR = "\f";
 
 const createEmptyPage = () =>
   Array.from({ length: MAX_LINES_PER_PAGE }, () => "");
@@ -79,6 +78,36 @@ const serializePages = (pages) =>
     .map((lines) => lines.join("\n"))
     .join("\n");
 
+const serializeBraContent = (pages) =>
+  pages
+    .map((lines) => lines.join("\n"))
+    .join(`\n${BRA_PAGE_SEPARATOR}\n`);
+
+const parseBraContent = (text) => {
+  if (!text) {
+    return [createEmptyPage()];
+  }
+  const normalized = text.replace(/\r/g, "");
+  const rawPages = normalized.includes(BRA_PAGE_SEPARATOR)
+    ? normalized.split(BRA_PAGE_SEPARATOR)
+    : null;
+
+  if (rawPages && rawPages.length > 1) {
+    const parsed = rawPages
+      .map((pageText) => pageText.replace(/^\n+/, "").replace(/\n+$/, ""))
+      .map((pageText) => sanitizePageValue(pageText, { pad: true }));
+    return parsed.length ? parsed : [createEmptyPage()];
+  }
+
+  const allLines = normalized.split("\n");
+  const chunked = [];
+  for (let i = 0; i < allLines.length; i += MAX_LINES_PER_PAGE) {
+    const chunk = allLines.slice(i, i + MAX_LINES_PER_PAGE).join("\n");
+    chunked.push(sanitizePageValue(chunk, { pad: true }));
+  }
+  return chunked.length ? chunked : [createEmptyPage()];
+};
+
 const deserializePages = (text) => {
   const normalized = typeof text === "string" ? text.replace(/\r/g, "") : "";
   const rawLines =
@@ -118,12 +147,17 @@ const PrinterPanel = ({
   onDisconnectDevice,
   detectButtonDisabled,
   statusLabel,
-  onBlink,
+  onPrint,
+  printDisabled,
+  logs,
+  onClearLogs,
 }) => {
   const [pages, setPages] = useState(() => deserializePages(value || ""));
   const [activePage, setActivePage] = useState(0);
   const textareaRefs = useRef({});
+  const [showLogs, setShowLogs] = useState(false);
   const lastSerializedRef = useRef(serializePages(pages));
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     const incomingPages = deserializePages(value || "");
@@ -136,6 +170,10 @@ const PrinterPanel = ({
       );
     }
   }, [value]);
+
+  const toggleLogs = useCallback(() => {
+    setShowLogs((prev) => !prev);
+  }, []);
 
   const commitPages = useCallback(
     (updater, options = {}) => {
@@ -180,14 +218,6 @@ const PrinterPanel = ({
       pageIndex,
       { rawValue, selectionStart, selectionEnd, scrollTop, windowScroll }
     ) => {
-      if(debug) console.log("[PrinterPanel] applySanitizedUpdate:start", {
-        pageIndex,
-        rawValueLength: rawValue.length,
-        selectionStart,
-        selectionEnd,
-        scrollTop,
-        windowScroll,
-      });
       const sanitizedLines = sanitizePageValue(rawValue, { pad: true });
       const sanitizedValue = sanitizedLines.join("\n");
       const prefixStart = sanitizePageValue(rawValue.slice(0, selectionStart), {
@@ -201,10 +231,6 @@ const PrinterPanel = ({
         (prevPages) => {
           const next = [...prevPages];
           next[pageIndex] = sanitizedLines;
-          if(debug) console.log("[PrinterPanel] applySanitizedUpdate:commit", {
-            pageIndex,
-            sanitizedValueLength: sanitizedValue.length,
-          });
           return next;
         },
         { nextActivePage: pageIndex }
@@ -224,14 +250,6 @@ const PrinterPanel = ({
         }
         const nextStart = Math.min(prefixStart.length, sanitizedValue.length);
         const nextEnd = Math.min(prefixEnd.length, sanitizedValue.length);
-        if(debug) console.log("[PrinterPanel] applySanitizedUpdate:restore", {
-          pageIndex,
-          nextStart,
-          nextEnd,
-          sanitizedValueLength: sanitizedValue.length,
-          finalScrollTop: textarea.scrollTop,
-          windowScrollRestored: windowScroll,
-        });
         textarea.setSelectionRange(nextStart, nextEnd);
         if (windowScroll) {
           window.scrollTo(windowScroll.x, windowScroll.y);
@@ -248,14 +266,6 @@ const PrinterPanel = ({
         x: window.scrollX,
         y: window.scrollY,
       };
-      if(debug) console.log("[PrinterPanel] handlePageChange", {
-        pageIndex,
-        valueLength: target.value.length,
-        selectionStart: target.selectionStart,
-        selectionEnd: target.selectionEnd,
-        scrollTop: target.scrollTop,
-        windowScroll,
-      });
       applySanitizedUpdate(pageIndex, {
         rawValue: target.value,
         selectionStart: target.selectionStart,
@@ -307,6 +317,47 @@ const PrinterPanel = ({
 
   const noop = useCallback(() => {}, []);
 
+  const handleExportBra = useCallback(() => {
+    const braContent = serializeBraContent(pages);
+    const blob = new Blob([braContent], {
+      type: "text/plain;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "documento.bra";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [pages]);
+
+  const handleImportBraClick = useCallback(() => {
+    if (importInputRef.current) {
+      importInputRef.current.click();
+    }
+  }, []);
+
+  const handleImportBraFile = useCallback(
+    (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) {
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === "string" ? reader.result : "";
+        const importedPages = parseBraContent(text);
+        commitPages(() => importedPages, { nextActivePage: 0 });
+        if (importInputRef.current) {
+          importInputRef.current.value = "";
+        }
+      };
+      reader.readAsText(file, "utf-8");
+    },
+    [commitPages]
+  );
+
   useEffect(() => {
     const textarea = textareaRefs.current[activePage];
     if (textarea) {
@@ -317,6 +368,8 @@ const PrinterPanel = ({
   const currentLines = pages[activePage] || createEmptyPage();
   const pageValue = currentLines.join("\n");
   const canRemovePage = pages.length > 1;
+  const actionButtonBase =
+    "min-w-[150px] px-4 py-2 rounded-full text-sm md:text-base font-medium transition-transform duration-200 hover:scale-105 shadow text-center";
 
   const setTextareaRef = useCallback(
     (pageIndex, element) => {
@@ -356,11 +409,11 @@ const PrinterPanel = ({
             Siguiente
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap gap-2 justify-end flex-1">
           <button
             type="button"
             onClick={handleAddPage}
-            className="px-4 py-2 rounded-full bg-green-500 text-white text-sm md:text-base hover:bg-green-600 transition-transform duration-200 hover:scale-105 shadow"
+            className={`${actionButtonBase} bg-green-500 text-white hover:bg-green-600`}
           >
             Agregar hoja
           </button>
@@ -368,13 +421,105 @@ const PrinterPanel = ({
             type="button"
             onClick={canRemovePage ? handleRemovePageSafe : noop}
             disabled={!canRemovePage}
-            className="px-4 py-2 rounded-full bg-red-500 text-white text-sm md:text-base hover:bg-red-600 transition-transform duration-200 hover:scale-105 shadow disabled:opacity-60 disabled:cursor-not-allowed"
+            className={`${actionButtonBase} bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed`}
           >
             Eliminar hoja
           </button>
+          <button
+            type="button"
+            onClick={handleExportBra}
+            className={`${actionButtonBase} bg-blue-500 text-white hover:bg-blue-600`}
+          >
+            Exportar .bra
+          </button>
+          <button
+            type="button"
+            onClick={handleImportBraClick}
+            className={`${actionButtonBase} bg-indigo-500 text-white hover:bg-indigo-600`}
+          >
+            Importar .bra
+          </button>
+          <button
+            className={`${actionButtonBase} ${
+              arduinoPort
+                ? "bg-yellow-500 hover:bg-yellow-600 text-white"
+                : "bg-purple-500 hover:bg-purple-700 text-white"
+            } disabled:opacity-60 disabled:cursor-not-allowed`}
+            onClick={arduinoPort ? onDisconnectDevice : onDetectDevice}
+            disabled={detectButtonDisabled}
+          >
+            {arduinoPort
+              ? "Desconectar dispositivo"
+              : arduinoStatus === "buscando"
+              ? "Buscando..."
+              : "Detectar dispositivo"}
+          </button>
+          <button
+            type="button"
+            onClick={onPrint}
+            disabled={printDisabled}
+            className={`${actionButtonBase} bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed`}
+          >
+            Imprimir
+          </button>
+          <button
+            type="button"
+            onClick={toggleLogs}
+            className={`${actionButtonBase} bg-slate-100 text-slate-700 hover:bg-slate-200`}
+          >
+            {showLogs ? "Ocultar consola" : "Mostrar consola"}
+          </button>
+          {showLogs && (
+            <button
+              type="button"
+              onClick={onClearLogs}
+              className={`${actionButtonBase} bg-slate-100 text-slate-700 hover:bg-slate-200`}
+            >
+              Limpiar consola
+            </button>
+          )}
         </div>
       </div>
-
+      <div className="text-sm text-gray-600">
+        <p>{statusLabel}</p>
+        {arduinoError && <p className="text-red-500 mt-1">{arduinoError}</p>}
+      </div>
+      {showLogs && (
+        <div className="w-full max-w-[900px] bg-white border border-gray-200 rounded-lg shadow-md p-6">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-base font-semibold text-slate-700">Consola Arduino</h3>
+            <span className="text-xs text-slate-400">
+              Últimos {logs ? logs.length : 0} eventos
+            </span>
+          </div>
+          <div className="h-48 overflow-y-auto bg-slate-900 text-slate-100 rounded-md p-3 font-mono text-xs space-y-2">
+            {logs && logs.length ? (
+              logs.map((log) => (
+                <div key={log.id} className="whitespace-pre-wrap">
+                  <span className="text-slate-500 mr-2">
+                    {log.timestamp
+                      ? new Date(log.timestamp).toLocaleTimeString()
+                      : ""}
+                  </span>
+                  <span
+                    className={
+                      log.type === "error"
+                        ? "text-red-300"
+                        : log.type === "warning"
+                        ? "text-amber-300"
+                        : "text-emerald-300"
+                    }
+                  >
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="text-slate-500">Sin eventos registrados.</div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="bg-white shadow-2xl border border-gray-200 rounded-lg w-full max-w-[900px] p-10">
         <div
           className="flex gap-4 h-full"
@@ -442,12 +587,6 @@ const PrinterPanel = ({
                   x: window.scrollX,
                   y: window.scrollY,
                 };
-                if(debug) console.log("[PrinterPanel] keyDown:Enter", {
-                  selectionStart,
-                  selectionEnd,
-                  previousScrollTop,
-                  windowScroll,
-                });
                 const prefix = currentValue.slice(0, selectionStart);
                 const suffix = currentValue.slice(selectionEnd);
                 const updatedValue = `${prefix}\n${suffix}`;
@@ -467,35 +606,13 @@ const PrinterPanel = ({
           Página {activePage + 1}
         </div>
       </div>
-      <div className="w-full max-w-[900px] flex flex-col gap-4">
-        <button
-          className={`${
-            arduinoPort
-              ? "bg-yellow-500 hover:bg-yellow-600"
-              : "bg-purple-500 hover:bg-purple-700"
-          } text-white py-2 px-5 rounded-full text-lg transition-transform duration-200 hover:scale-105 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed`}
-          onClick={arduinoPort ? onDisconnectDevice : onDetectDevice}
-          disabled={detectButtonDisabled}
-        >
-          {arduinoPort
-            ? "Desconectar dispositivo"
-            : arduinoStatus === "buscando"
-            ? "Buscando..."
-            : "Detectar dispositivo"}
-        </button>
-        {arduinoPort && onBlink && (
-          <button
-            className="bg-gray-500 text-white py-2 px-5 rounded-full text-lg hover:bg-gray-700 transition-transform duration-200 hover:scale-105 shadow-lg"
-            onClick={onBlink}
-          >
-            Parpadear LED
-          </button>
-        )}
-        <div className="text-sm text-gray-600">
-          <p>{statusLabel}</p>
-          {arduinoError && <p className="text-red-500 mt-1">{arduinoError}</p>}
-        </div>
-      </div>
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".bra,text/plain"
+        className="hidden"
+        onChange={handleImportBraFile}
+      />
     </div>
   );
 };
@@ -510,7 +627,17 @@ PrinterPanel.propTypes = {
   onDisconnectDevice: PropTypes.func,
   detectButtonDisabled: PropTypes.bool,
   statusLabel: PropTypes.string,
-  onBlink: PropTypes.func,
+  onPrint: PropTypes.func,
+  printDisabled: PropTypes.bool,
+  logs: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      message: PropTypes.string.isRequired,
+      type: PropTypes.string,
+      timestamp: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+    })
+  ),
+  onClearLogs: PropTypes.func,
 };
 
 export default PrinterPanel;

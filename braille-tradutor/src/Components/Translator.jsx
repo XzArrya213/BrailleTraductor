@@ -13,6 +13,120 @@ import QwertyBraillePage from "./QwertyBraillePage";
 import SavedTranslations from "./SavedTranslations";
 import PrinterPanel from "./PrinterPanel";
 import { auth, db } from "../firebase/config";
+const ACK = 0x06;
+const NAK = 0x15;
+
+async function openSerialPort() {
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+
+  const reader = port.readable.getReader();
+  const writer = port.writable.getWriter();
+  const textEncoder = new TextEncoder();
+
+  return { port, reader, writer, textEncoder };
+}
+
+async function waitForREADY(reader, timeoutMs = 5000, onLog) {
+  const decoder = new TextDecoder();
+  const start = performance.now();
+  let buffer = "";
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      throw new Error("El lector serie se cerró durante la espera de READY");
+    }
+    if (value) {
+      const chunk = decoder.decode(value);
+      buffer += chunk;
+      if (chunk.trim() && onLog) {
+        onLog(chunk.trim());
+      }
+      if (buffer.includes("READY")) {
+        if (onLog) {
+          onLog("Dispositivo indicó READY");
+        }
+        return true;
+      }
+    }
+    if (performance.now() - start > timeoutMs) {
+      if (onLog) {
+        onLog("Timeout esperando READY");
+      }
+      return false;
+    }
+  }
+}
+
+async function sendCharAndWaitAck(
+  writer,
+  reader,
+  encoder,
+  ch,
+  ackTimeoutMs = 3000,
+  onLog
+) {
+  const encodeLabel = (value) => {
+    if (value === "\n") return "[EOL]\\n";
+    if (value === FORM_FEED) return "[EOP]\\f";
+    if (value === EOT) return "[EOJ]0x04";
+    const code = value.charCodeAt(0);
+    return `${value}`.replace(/\s/g, (match) =>
+      match === " " ? "[espacio]" : `0x${code.toString(16).padStart(2, "0")}`
+    );
+  };
+
+  await writer.write(encoder.encode(ch));
+
+  if (onLog) {
+    onLog(`Enviado carácter: ${encodeLabel(ch)}`);
+  }
+
+  const start = performance.now();
+  const decoder = new TextDecoder();
+  let pending = [];
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      throw new Error("El lector serie se cerró esperando ACK");
+    }
+    if (value && value.length) {
+      for (let i = 0; i < value.length; i += 1) {
+        const byte = value[i];
+        if (byte === ACK) {
+          if (pending.length && onLog) {
+            onLog(decoder.decode(new Uint8Array(pending)).trim());
+            pending = [];
+          }
+          if (onLog) {
+            onLog(`ACK recibido para ${encodeLabel(ch)}`);
+          }
+          return true;
+        }
+        if (byte === NAK) {
+          if (pending.length && onLog) {
+            onLog(decoder.decode(new Uint8Array(pending)).trim());
+            pending = [];
+          }
+          if (onLog) {
+            onLog(`NAK recibido para ${encodeLabel(ch)}`);
+          }
+          return false;
+        }
+        pending.push(byte);
+      }
+      if (pending.length && onLog) {
+        onLog(decoder.decode(new Uint8Array(pending)).trim());
+        pending = [];
+      }
+    }
+    if (performance.now() - start > ackTimeoutMs) {
+      throw new Error("Tiempo de espera agotado esperando ACK");
+    }
+  }
+}
 
 // Mapa de Braille en español (ampliado y corregido para signos y puntuación)
 const mapaBraille = {
@@ -224,6 +338,51 @@ function PanelPestañaPersonalizado(props) {
     </div>
   );
 }
+
+const MAX_LINE_CHARS = 25;
+const MAX_PAGE_LINES = 32;
+const FORM_FEED = "\f";
+const EOT = String.fromCharCode(0x04);
+
+const splitLineIntoChunks = (line = "") => {
+  if (!line) return [""];
+  const chunks = [];
+  let remaining = line;
+  while (remaining.length > MAX_LINE_CHARS) {
+    chunks.push(remaining.slice(0, MAX_LINE_CHARS));
+    remaining = remaining.slice(MAX_LINE_CHARS);
+  }
+  chunks.push(remaining);
+  return chunks;
+};
+
+const buildPrintablePages = (text) => {
+  const normalized = (text || "").replace(/\r/g, "");
+  const rawLines = normalized.split("\n");
+  const pages = [];
+  let currentLines = [];
+
+  rawLines.forEach((line) => {
+    splitLineIntoChunks(line).forEach((chunk) => {
+      if (currentLines.length === MAX_PAGE_LINES) {
+        pages.push(currentLines.slice());
+        currentLines = [];
+      }
+      currentLines.push(chunk);
+    });
+  });
+
+  if (currentLines.length || !pages.length) {
+    while (currentLines.length < MAX_PAGE_LINES) {
+      currentLines.push("");
+    }
+    pages.push(currentLines.slice(0, MAX_PAGE_LINES));
+  }
+
+  return pages;
+};
+
+export { textoABraille, brailleATexto };
 
 PanelPestañaPersonalizado.propTypes = {
   children: PropTypes.node,
@@ -437,8 +596,33 @@ export default function Traductor() {
 
   // Estado de conexion con Arduino
   const [arduinoPort, setArduinoPort] = useState(null);
+  const [arduinoReader, setArduinoReader] = useState(null);
+  const [arduinoWriter, setArduinoWriter] = useState(null);
   const [arduinoStatus, setArduinoStatus] = useState("desconectado");
   const [arduinoError, setArduinoError] = useState(null);
+  const [arduinoReady, setArduinoReady] = useState(false);
+  const [arduinoBusy, setArduinoBusy] = useState(false);
+  const [arduinoLogs, setArduinoLogs] = useState([]);
+  const textEncoderRef = useRef(null);
+
+  const appendArduinoLog = useCallback((message, { type = "info" } = {}) => {
+    setArduinoLogs((prev) => {
+      const next = [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          message,
+          type,
+          timestamp: new Date(),
+        },
+      ];
+      return next.slice(-200);
+    });
+  }, []);
+
+  const clearArduinoLogs = useCallback(() => {
+    setArduinoLogs([]);
+  }, []);
 
   // STT y TTS
   const recognitionRef = useRef(null);
@@ -502,6 +686,17 @@ export default function Traductor() {
       return;
     }
     try {
+      if (arduinoReader) {
+        try {
+          await arduinoReader.cancel();
+        } catch (cancelError) {
+          console.warn("Cancelación del lector serie:", cancelError);
+        }
+        arduinoReader.releaseLock();
+      }
+      if (arduinoWriter) {
+        arduinoWriter.releaseLock();
+      }
       await arduinoPort.close();
       setArduinoError(null);
       setArduinoStatus("desconectado");
@@ -511,30 +706,86 @@ export default function Traductor() {
       setArduinoStatus("error");
     } finally {
       setArduinoPort(null);
+      setArduinoReader(null);
+      setArduinoWriter(null);
+      setArduinoReady(false);
+      textEncoderRef.current = null;
     }
-  }, [arduinoPort]);
+  }, [arduinoPort, arduinoReader, arduinoWriter]);
 
   const enviarComandoArduino = useCallback(
-    async (mensaje) => {
-      if (!arduinoPort || !arduinoPort.writable) {
+    async (mensaje, { esperarAck = true } = {}) => {
+      if (!arduinoPort || !arduinoReader || !arduinoWriter) {
         setArduinoError("Puerto serie no disponible");
+        appendArduinoLog("Puerto serie no disponible", { type: "error" });
+        return false;
+      }
+      if (!textEncoderRef.current) {
+        textEncoderRef.current = new TextEncoder();
+      }
+      if (arduinoBusy) {
+        setArduinoError("El dispositivo está procesando otra operación");
+        appendArduinoLog(
+          "El dispositivo está procesando otra operación",
+          { type: "warning" }
+        );
         return false;
       }
 
-      const writer = arduinoPort.writable.getWriter();
+      setArduinoBusy(true);
       try {
-        await writer.write(new TextEncoder().encode(mensaje));
+        if (!esperarAck) {
+          await arduinoWriter.write(
+            textEncoderRef.current.encode(mensaje)
+          );
+          appendArduinoLog(`Comando enviado sin ACK: ${mensaje}`);
+          return true;
+        }
+
+        for (const ch of mensaje) {
+          const ok = await sendCharAndWaitAck(
+            arduinoWriter,
+            arduinoReader,
+            textEncoderRef.current,
+            ch,
+            3000,
+            appendArduinoLog
+          );
+
+          if (!ok) {
+            setArduinoError(`Carácter no reconocido por el dispositivo: "${ch}"`);
+            appendArduinoLog(
+              `Carácter no reconocido por el dispositivo: "${ch}"`,
+              { type: "error" }
+            );
+            return false;
+          }
+        }
+        setArduinoError(null);
+        appendArduinoLog("Mensaje enviado correctamente");
         return true;
       } catch (error) {
         console.error("Error al enviar comando al dispositivo serie:", error);
         setArduinoStatus("error");
         setArduinoError(error && error.message ? error.message : String(error));
+        appendArduinoLog(
+          `Error al enviar comando: ${
+            error && error.message ? error.message : String(error)
+          }`,
+          { type: "error" }
+        );
         return false;
       } finally {
-        writer.releaseLock();
+        setArduinoBusy(false);
       }
     },
-    [arduinoPort]
+    [
+      arduinoPort,
+      arduinoReader,
+      arduinoWriter,
+      arduinoBusy,
+      appendArduinoLog,
+    ]
   );
 
   const manejarDetectarArduino = useCallback(async () => {
@@ -546,26 +797,194 @@ export default function Traductor() {
     try {
       setArduinoStatus("buscando");
       setArduinoError(null);
+      setArduinoReady(false);
+
       if (arduinoPort) {
         await manejarDesconectarArduino();
       }
-      // const port = await navigator.serial.requestPort({ filters: arduinoFilters });
-      const port = await navigator.serial.requestPort();
-      await port.open({ baudRate: 9600 });
+
+      const { port, reader, writer, textEncoder } = await openSerialPort();
+      textEncoderRef.current = textEncoder;
       setArduinoPort(port);
+      setArduinoReader(reader);
+      setArduinoWriter(writer);
+
+      let listo = false;
+      try {
+        listo = await waitForREADY(reader, 5000, appendArduinoLog);
+      } catch (readyError) {
+        console.warn("No se pudo confirmar READY:", readyError);
+        appendArduinoLog(
+          `No se pudo confirmar READY: ${
+            readyError && readyError.message ? readyError.message : readyError
+          }`,
+          { type: "warning" }
+        );
+      }
+
+      setArduinoReady(listo);
+      if (listo) {
+        appendArduinoLog("Arduino listo para recibir datos");
+      } else {
+        appendArduinoLog(
+          "Arduino conectado pero no respondió READY. Continúa con precaución.",
+          { type: "warning" }
+        );
+      }
       setArduinoStatus("conectado");
     } catch (error) {
-      const nombreError = error && error.name ? error.name : "";
-      if (nombreError === "NotFoundError" || nombreError === "AbortError") {
-        setArduinoStatus("desconectado");
-        setArduinoError(null);
-      } else {
-        console.error("Fallo al conectar con un dispositivo serie:", error);
-        setArduinoStatus("error");
-        setArduinoError(error && error.message ? error.message : String(error));
-      }
+      console.error("Fallo al conectar con un dispositivo serie:", error);
+      appendArduinoLog(
+        `Error al conectar: ${
+          error && error.message ? error.message : String(error)
+        }`,
+        { type: "error" }
+      );
+      await manejarDesconectarArduino();
+      setArduinoStatus("error");
+      setArduinoError(error && error.message ? error.message : String(error));
     }
-  }, [arduinoPort, manejarDesconectarArduino]);
+  }, [arduinoPort, manejarDesconectarArduino, appendArduinoLog]);
+
+  const handlePrintDocument = useCallback(async () => {
+    const trimmed = printerText.replace(/\r/g, "").trimEnd();
+    if (!trimmed) {
+      appendArduinoLog("No hay contenido para imprimir.", { type: "warning" });
+      return;
+    }
+    if (!arduinoPort || !arduinoReader || !arduinoWriter) {
+      const msg = "Conecta el dispositivo antes de imprimir.";
+      setArduinoError(msg);
+      appendArduinoLog(msg, { type: "error" });
+      return;
+    }
+    if (!arduinoReady) {
+      appendArduinoLog(
+        "El dispositivo no reportó READY. Intenta reconectar si la impresión falla.",
+        { type: "warning" }
+      );
+    }
+
+    if (!textEncoderRef.current) {
+      textEncoderRef.current = new TextEncoder();
+    }
+
+    const pages = buildPrintablePages(printerText);
+    appendArduinoLog(`Iniciando impresión (${pages.length} hoja(s))`);
+
+    setArduinoBusy(true);
+    try {
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        const pageLines = pages[pageIndex];
+        const isLastPage = pageIndex === pages.length - 1;
+
+        let lastContentLine = -1;
+        for (let i = pageLines.length - 1; i >= 0; i -= 1) {
+          if ((pageLines[i] || "").trim().length > 0) {
+            lastContentLine = i;
+            break;
+          }
+        }
+
+        if (lastContentLine === -1) {
+          appendArduinoLog(`Hoja ${pageIndex + 1}: sin contenido`);
+        } else {
+          for (let lineIndex = 0; lineIndex <= lastContentLine; lineIndex += 1) {
+            const lineContent = pageLines[lineIndex] || "";
+            appendArduinoLog(
+              `Hoja ${pageIndex + 1}, línea ${lineIndex + 1}: ${
+                lineContent ? lineContent : "[blanco]"
+              }`
+            );
+
+            for (const ch of lineContent) {
+              const ok = await sendCharAndWaitAck(
+                arduinoWriter,
+                arduinoReader,
+                textEncoderRef.current,
+                ch,
+                3000,
+                appendArduinoLog
+              );
+              if (!ok) {
+                appendArduinoLog(`NAK recibido al enviar "${ch}"`, {
+                  type: "error",
+                });
+                throw new Error(`NAK recibido en carácter "${ch}"`);
+              }
+            }
+
+            const eolOk = await sendCharAndWaitAck(
+              arduinoWriter,
+              arduinoReader,
+              textEncoderRef.current,
+              "\n",
+              3000,
+              appendArduinoLog
+            );
+            if (!eolOk) {
+              appendArduinoLog("NAK recibido al enviar fin de línea", {
+                type: "error",
+              });
+              throw new Error("NAK en fin de línea");
+            }
+          }
+        }
+
+        if (!isLastPage) {
+          const eopOk = await sendCharAndWaitAck(
+            arduinoWriter,
+            arduinoReader,
+            textEncoderRef.current,
+            FORM_FEED,
+            3000,
+            appendArduinoLog
+          );
+          if (!eopOk) {
+            appendArduinoLog("NAK recibido al enviar fin de página", {
+              type: "error",
+            });
+            throw new Error("NAK en fin de página");
+          }
+          appendArduinoLog(`Fin de página ${pageIndex + 1}`);
+        }
+      }
+
+      const eojOk = await sendCharAndWaitAck(
+        arduinoWriter,
+        arduinoReader,
+        textEncoderRef.current,
+        EOT,
+        3000,
+        appendArduinoLog
+      );
+      if (!eojOk) {
+        appendArduinoLog("NAK recibido al enviar fin de trabajo", {
+          type: "error",
+        });
+        throw new Error("NAK en fin de trabajo");
+      }
+
+      appendArduinoLog("Impresión finalizada correctamente.");
+    } catch (error) {
+      const message =
+        error && error.message ? error.message : "Error al imprimir";
+      appendArduinoLog(message, { type: "error" });
+      setArduinoError(message);
+      setArduinoStatus("error");
+    } finally {
+      setArduinoBusy(false);
+    }
+  }, [
+    printerText,
+    arduinoPort,
+    arduinoReader,
+    arduinoWriter,
+    arduinoReady,
+    appendArduinoLog,
+    setArduinoError,
+    setArduinoStatus,
+  ]);
 
   // useEffect(() => {
   //   if (typeof navigator === "undefined" || !("serial" in navigator)) {
@@ -653,23 +1072,17 @@ export default function Traductor() {
 
   useEffect(() => {
     return () => {
-      if (arduinoPort && typeof arduinoPort.close === "function") {
-        try {
-          const resultado = arduinoPort.close();
-          if (resultado && typeof resultado.catch === "function") {
-            resultado.catch((error) => {
-              console.error(
-                "Error al cerrar el puerto serie al limpiar:",
-                error
-              );
-            });
-          }
-        } catch (error) {
-          console.error("Error al cerrar el puerto serie al limpiar:", error);
-        }
-      }
+      manejarDesconectarArduino().catch((error) => {
+        console.error("Error al desconectar el dispositivo al limpiar:", error);
+        appendArduinoLog(
+          `Error al desconectar al limpiar: ${
+            error && error.message ? error.message : String(error)
+          }`,
+          { type: "error" }
+        );
+      });
     };
-  }, [arduinoPort]);
+  }, [manejarDesconectarArduino, appendArduinoLog]);
 
   const etiquetasEstadoArduino = {
     conectado: "Arduino conectado",
@@ -679,10 +1092,30 @@ export default function Traductor() {
     disponible: "Dispositivo serie detectado. Puedes conectarlo.",
     desconectado: "Sin dispositivo detectado",
   };
-  const etiquetaEstadoArduino =
+  let etiquetaEstadoArduino =
     etiquetasEstadoArduino[arduinoStatus] || "Sin dispositivo detectado";
+
+  if (arduinoStatus === "conectado") {
+    if (arduinoBusy) {
+      etiquetaEstadoArduino = "Enviando datos al dispositivo...";
+    } else if (arduinoReady) {
+      etiquetaEstadoArduino = "Arduino listo para recibir datos";
+    } else {
+      etiquetaEstadoArduino = "Arduino conectado (esperando READY)";
+    }
+  }
+
   const botonArduinoDeshabilitado =
-    arduinoStatus === "no soportado" || arduinoStatus === "buscando";
+    arduinoStatus === "no soportado" ||
+    arduinoStatus === "buscando" ||
+    arduinoBusy;
+  const printDisabled =
+    arduinoBusy ||
+    !printerText.trim() ||
+    !arduinoPort ||
+    !arduinoReader ||
+    !arduinoWriter ||
+    !arduinoReady;
 
   // Manejador para seleccionar imagen
   const manejarSeleccionImagen = useCallback(
@@ -1288,9 +1721,10 @@ export default function Traductor() {
                       onDisconnectDevice={manejarDesconectarArduino}
                       detectButtonDisabled={botonArduinoDeshabilitado}
                       statusLabel={etiquetaEstadoArduino}
-                      onBlink={
-                        arduinoPort ? () => enviarComandoArduino("T") : undefined
-                      }
+                      onPrint={handlePrintDocument}
+                      printDisabled={printDisabled}
+                      logs={arduinoLogs}
+                      onClearLogs={clearArduinoLogs}
                     />
                   </PanelPestañaPersonalizado>
                 </Box>
@@ -1343,5 +1777,3 @@ export default function Traductor() {
     </Routes>
   );
 }
-
-export { textoABraille, brailleATexto };
