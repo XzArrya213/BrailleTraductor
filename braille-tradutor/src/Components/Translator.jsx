@@ -11,6 +11,7 @@ import mammoth from "mammoth";
 import { Document, Packer, Paragraph } from "docx";
 import QwertyBraillePage from "./QwertyBraillePage";
 import SavedTranslations from "./SavedTranslations";
+import PrinterPanel from "./PrinterPanel";
 import { auth, db } from "../firebase/config";
 
 // Mapa de Braille en español (ampliado y corregido para signos y puntuación)
@@ -432,6 +433,7 @@ export default function Traductor() {
 
   // Nuevo estado para mostrar/ocultar traducciones guardadas
   const [showSaved, setShowSaved] = useState(false);
+  const [printerText, setPrinterText] = useState("");
 
   // Estado de conexion con Arduino
   const [arduinoPort, setArduinoPort] = useState(null);
@@ -492,6 +494,7 @@ export default function Traductor() {
     setUrlPrevisualizacionImagen(null);
     setDocumentoSeleccionado(null);
     setDocumentoEstructurado([]);
+    setPrinterText("");
   };
 
   const manejarDesconectarArduino = useCallback(async () => {
@@ -1049,6 +1052,7 @@ export default function Traductor() {
                   <Tab label="Texto" {...propsA11y(0)} />
                   <Tab label="Imágenes" {...propsA11y(1)} />
                   <Tab label="Documentos" {...propsA11y(2)} />
+                  <Tab label="Impresora" {...propsA11y(3)} />
                 </Tabs>
               </Box>
             </div>
@@ -1272,14 +1276,22 @@ export default function Traductor() {
                     </div>
                   </PanelPestañaPersonalizado>
 
-                  {/* Panel para Qwerty Braille */}
+                  {/* Panel para Impresora */}
                   <PanelPestañaPersonalizado valor={pestaña} indice={3}>
-                    <div className="flex flex-col items-center justify-center w-full min-h-[200px] p-4 rounded-lg bg-[#F5F5F5] text-[#333] shadow-md">
-                      <h2 className="text-2xl font-bold mb-4">
-                        Qwerty BrailleTraductor
-                      </h2>
-                      <QwertyBrailleInput />
-                    </div>
+                    <PrinterPanel
+                      value={printerText}
+                      onChange={setPrinterText}
+                      arduinoPort={arduinoPort}
+                      arduinoStatus={arduinoStatus}
+                      arduinoError={arduinoError}
+                      onDetectDevice={manejarDetectarArduino}
+                      onDisconnectDevice={manejarDesconectarArduino}
+                      detectButtonDisabled={botonArduinoDeshabilitado}
+                      statusLabel={etiquetaEstadoArduino}
+                      onBlink={
+                        arduinoPort ? () => enviarComandoArduino("T") : undefined
+                      }
+                    />
                   </PanelPestañaPersonalizado>
                 </Box>
               </div>
@@ -1295,37 +1307,11 @@ export default function Traductor() {
                   setUrlPrevisualizacionImagen(null);
                   setDocumentoSeleccionado(null);
                   setDocumentoEstructurado([]);
+                  setPrinterText("");
                 }}
               >
                 Limpiar
               </button>
-              <button
-                className={`${
-                  arduinoPort
-                    ? "bg-yellow-500 hover:bg-yellow-600"
-                    : "bg-purple-500 hover:bg-purple-700"
-                } text-white py-2 px-5 rounded-full text-lg transition-transform duration-200 hover:scale-105 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed`}
-                onClick={
-                  arduinoPort
-                    ? manejarDesconectarArduino
-                    : manejarDetectarArduino
-                }
-                disabled={botonArduinoDeshabilitado}
-              >
-                {arduinoPort
-                  ? "Desconectar dispositivo"
-                  : arduinoStatus === "buscando"
-                  ? "Buscando..."
-                  : "Detectar dispositivo"}
-              </button>
-              {arduinoPort && (
-                <button
-                  className="bg-gray-500 text-white py-2 px-5 rounded-full text-lg hover:bg-gray-700 transition-transform duration-200 hover:scale-105 shadow-lg"
-                  onClick={() => enviarComandoArduino("T")}
-                >
-                  Parpadear LED
-                </button>
-              )}
               {pestaña === 0 && ( // Solo mostrar el boton Historial en la pestana de texto
                 <button
                   className="bg-[#4C9FE2] text-white py-2 px-5 rounded-full text-lg hover:bg-[#0056b3] transition-transform duration-200 hover:scale-105 shadow-lg"
@@ -1340,12 +1326,6 @@ export default function Traductor() {
               >
                 Cerrar Sesion
               </button>
-              <div className="basis-full text-center text-sm text-gray-600 mt-2">
-                <p>{etiquetaEstadoArduino}</p>
-                {arduinoError && (
-                  <p className="text-red-500 mt-1">{arduinoError}</p>
-                )}
-              </div>
             </div>
             {/* Componente de traducciones guardadas */}
             {showSaved && (
@@ -1365,6 +1345,3 @@ export default function Traductor() {
 }
 
 export { textoABraille, brailleATexto };
-
-
-
