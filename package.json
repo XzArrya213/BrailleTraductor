@@ -16,6 +16,7 @@
     "tailwindcss": "^3.4.17"
   },
   "scripts": {
-    "run": "npm run dev"
+    "run": "npm run dev",
+    "build": "cd braille-tradutor && npm run build"
   }
 }

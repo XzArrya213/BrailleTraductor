@@ -1,0 +1,49 @@
+# A descriptive name for your workflow
+name: Deploy braille-traductor to production
+
+# Defines when the workflow will run.
+# This workflow is triggered on every 'push' to the 'main' branch.
+on:
+  push:
+    branches:
+      - main
+
+# Defines the jobs (tasks) to be executed
+jobs:
+  # The name of the job is 'deploy'
+  deploy:
+    # This job will run on the latest version of an Ubuntu virtual machine
+    runs-on: ubuntu-latest
+    
+    # Defines the steps to be followed within the job
+    steps:
+      # Step 1: Check out the code from the repository
+      # The 'actions/checkout@v3' action downloads your code to the runner
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # Step 2: Build the project
+      # This step navigates to the 'braille-tradutor' directory and runs the build commands
+      - name: Build Project
+        run: |
+          cd braille-tradutor
+          npm install
+          npm run build
+
+      # Step 3: Deploy the project to the server via SSH
+      # This step uses the 'appleboy/ssh-action' to securely connect to your server
+      # It uses secrets for security, so make sure they are configured
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            # Navigate to the project folder inside the runner
+            cd braille-tradutor
+            # Copy the contents of the 'build' folder to your server's public directory
+            sudo cp -r build/* /var/www/html/
+            
+            # Restart your web server (e.g., Apache) to apply the changes
+            sudo systemctl restart apache2
