@@ -7,6 +7,7 @@ Este sistema es una aplicación web desarrollada en React que permite traducir t
 ## ▫️Fuentes y tipos de datos
 
 El sistema maneja diferentes tipos de datos:
+
 - **Datos estructurados:** Usuarios y traducciones almacenados en Firebase.
 - **Datos semiestructurados/no estructurados:** Archivos de texto cargados por el usuario en formatos PDF, DOCX y TXT.
 
@@ -29,7 +30,7 @@ Esto permite gestionar tanto la información de los usuarios como los documentos
 - **backend/**: Lógica de servidor (si aplica, Node.js/Express).
 - **public/**: Archivos estáticos e imágenes.
 
-## Justificación de herramientas y bibliotecas para la interfaz
+## ▫️Justificación de herramientas y bibliotecas para la interfaz
 
 Para la construcción de la interfaz de usuario se eligieron **Material UI** y **Tailwind CSS** debido a las siguientes razones:
 
@@ -46,13 +47,13 @@ Actualmente la lógica principal de traducción y autenticación se maneja en el
 - `POST /api/translate` - Traducir texto a Braille o viceversa.
 - `GET /api/translations` - Obtener historial de traducciones del usuario.
 
-## Seguridad y autenticación
+## ▫️Seguridad y autenticación
 
 El sistema aplica principios de codificación segura mediante la validación de entradas en los formularios y en la carga de archivos, evitando así datos inválidos o potencialmente peligrosos. Todas las comunicaciones entre la aplicación y Firebase se realizan a través de HTTPS, lo que garantiza la confidencialidad e integridad de los datos transmitidos. Además, Firebase gestiona de forma segura las sesiones de usuario y el acceso a la base de datos, siguiendo buenas prácticas de seguridad.
 
 Para la autenticación y el almacenamiento de datos, se utiliza Firebase, que implementa autenticación segura basada en tokens JWT y protocolos modernos. Esto asegura que solo los usuarios autenticados puedan acceder a sus traducciones y datos personales, cumpliendo con los estándares actuales de protección de
 
-## Actualizaciones y mejoras implementadas
+## ▫️Actualizaciones y mejoras implementadas
 
 - Integración de Firebase para autenticación y almacenamiento de traducciones.
 - Traducción de documentos PDF, DOCX y TXT.
@@ -65,14 +66,14 @@ Para la autenticación y el almacenamiento de datos, se utiliza Firebase, que im
 - Separación de componentes y lógica para facilitar el mantenimiento.
 - Actualizaciones frecuentes y control de versiones en GitHub.
 
-## Instalación y uso
+## ▫️Instalación y uso
 
 1. Clona el repositorio.
 2. Ejecuta `npm install` para instalar dependencias.
 3. Ejecuta `npm start` para iniciar la aplicación en modo desarrollo.
 4. Accede a [http://localhost:3000](http://localhost:3000) en tu navegador.
 
-## Pruebas
+## ▫️Pruebas
 
 Puedes ejecutar pruebas básicas con:
 
@@ -85,6 +86,6 @@ Puedes ejecutar pruebas básicas con:
 npm start
 ```
 
-## Créditos y agradecimientos
+## ▫️Créditos y agradecimientos
 
 Desarrollado por RENE DE JESUS RANGEL BUITRON Alumno de la Universidad Tecnologica de Salamanca Guanajuato y colaboradores. Basado en Create React App y usando Firebase, Material UI, Tailwind CSS y docx.

@@ -63,7 +63,7 @@ export default function Form() {
         {/* Sección de Imagen */}
         <div className="hidden md:flex md:w-1/2 bg-gray-200 justify-center items-center">
           <img
-            src={`${process.env.PUBLIC_URL}/fondo-login.jpg`}
+            src={`${process.env.PUBLIC_URL}/DENEW.png`}
             alt=""
             className="w-full h-full object-cover"
           />

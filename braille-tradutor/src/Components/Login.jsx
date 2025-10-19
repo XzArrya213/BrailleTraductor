@@ -1,5 +1,3 @@
-// DEPRECATED: Este componente no se usa. El control de autenticación y renderizado está en App.js.
-
 import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { auth } from "../firebase";
 import { useNavigate } from "react-router-dom";
@@ -20,7 +18,7 @@ function Login() {
   };
 
   return (
-    <div className="min-h-screen flex justify-center items-center">
+    <div className="min-h-screen flex justify-center items-center bg-gray-100">
       <Form googleSignIn={handleGoogleSignIn} />
     </div>
   );

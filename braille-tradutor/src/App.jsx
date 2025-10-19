@@ -12,47 +12,19 @@ import QwertyBraillePage from "./Components/QwertyBraillePage";
 import Login from "./Components/Login";
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [user, setUser] = useState(undefined);
 
   useEffect(() => {
-    let unsubscribe;
-    try {
-      unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-        setUser(currentUser);
-        setLoading(false);
-      });
-    } catch (err) {
-      setError(err.message || "Error inesperado");
-      setLoading(false);
-    }
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
   }, []);
 
-  if (loading) {
-    // Evita cualquier renderizado de rutas o componentes mientras carga
+  if (user === undefined) {
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#f3f4f6",
-        }}
-      >
-        <div style={{ fontSize: 24, color: "#4b5563" }}>Cargando...</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-100">
-        <div className="text-2xl text-red-600">Error: {error}</div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <span className="text-xl text-gray-700">Cargando...</span>
       </div>
     );
   }
@@ -70,9 +42,7 @@ function App() {
         />
         <Route
           path="/qwerty"
-          element={
-            user ? <QwertyBraillePage /> : <Navigate to="/login" replace />
-          }
+          element={user ? <QwertyBraillePage /> : <Navigate to="/login" replace />}
         />
         <Route
           path="*"
