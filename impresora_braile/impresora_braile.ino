@@ -1,25 +1,64 @@
 #include <Arduino.h>
 #include <AccelStepper.h>
 #include <math.h>
+#include <EEPROM.h>
 #include "brailleMap.h"
 
-// Códigos de control / protocolo
+// ---------------- Protocolo ----------------
 const uint8_t ACK = 0x06;  // Acknowledge
 const uint8_t NAK = 0x15;  // Negative Acknowledge
 const uint8_t EOT = 0x04;  // End of Transmission
 
-#define SOL_PIN A3
+// ---------------- Pines ----------------
+#define SOL_PIN    A3
 #define CARRO_STEP 2 // X
 #define CARRO_DIR  5
 #define PAPEL_STEP 3 // Y
 #define PAPEL_DIR  6
-#define EN_PIN 8
+#define EN_PIN     8
 
-// Ajusta a tu mecánica
-const uint16_t DOT_ON_MS   = 30;  // tiempo del golpe (solenoide activado)
-const uint16_t DOT_OFF_MS  = 70;  // descanso entre puntos
+// Golpe del punto
+const uint16_t DOT_ON_MS   = 70;
+const uint16_t DOT_OFF_MS  = 70;
 
-enum Axis { CARRO_AXIS, PAPEL_AXIS }; // X, Y
+// Velocidades (pasos/seg)
+const int CARRO_SPEED      = 900;   // impresión
+const int PAPEL_SPEED      = 100;
+const int CARRO_SPEED_CAL  = CARRO_SPEED / 2; // calibración
+const int PAPEL_SPEED_CAL  = PAPEL_SPEED / 2;
+
+// ---------------- Geometría braille (norma) ----------------
+// a = 2,5 mm, b = 2,5 mm, c = 6 mm, d = 10 mm
+const float BRAILLE_A_MM          = 2.5f;  // distancia horizontal entre columnas de puntos
+const float BRAILLE_B_MM          = 2.5f;  // distancia vertical entre filas de puntos
+const float BRAILLE_C_MM          = 6.0f;  // distancia entre centros de puntos idénticos de celdas contiguas
+const float BRAILLE_D_MM          = 10.0f; // interlineado
+const float BRAILLE_CELL_W_MM     = 4.0f;
+const float BRAILLE_CELL_H_MM     = 6.5f;
+
+// ---------------- Mecánica del papel ----------------
+// Eje X: calibración de 0 (derecha) a tope izquierdo ≈ 18,5 cm
+const float CARRO_TRAVEL_MM       = 185.0f;
+
+// Eje Y: dato medido -> 100 pasos = 10,1 cm = 101 mm
+const float PAPEL_TRAVEL_MM       = 100.0f;
+const float PAPEL_TRAVEL_STEPS    = 100.0f;
+
+// Distancia fija entre línea del punzón y línea de contacto del rodillo
+const float ROLLER_TO_PUNCH_MM    = 77.5f; // 7,75 cm
+
+// Calibración X
+long  calibXDistance = 0;   // pasos desde 0 hasta el límite mecánico en X
+float stepsPerMmX    = 0.0f;
+float stepsPerMmY    = 0.0f;
+
+// Estado de impresión
+// Convención eje X:
+//   X = 0   -> margen derecho de la página (inicio de línea)
+//   X < 0   -> hacia la izquierda (dirección de impresión)
+int currentColumn = 0;      // número de celdas impresas en la línea actual
+
+enum Axis { CARRO_AXIS, PAPEL_AXIS };
 
 // Prototipos
 void handleEndLine();
@@ -27,124 +66,322 @@ void handleEndPage();
 void handleEndJob();
 void processBin(const char* bin);
 
-void move(Axis axis, float steps);
-void setHome();
-void firePunch(int isFiring);
-void wait_all();
+void moveMm(Axis axis, float mm);
+long mmToStepsX(float mm);
+long mmToStepsY(float mm);
+void firePunch(char bit);
+void waitAll();
+
+void runCalibrationX();
+void feedPaperToRoller();
 
 // Motores paso a paso
 AccelStepper stepCarro(AccelStepper::DRIVER, CARRO_STEP, CARRO_DIR);
 AccelStepper stepPapel(AccelStepper::DRIVER, PAPEL_STEP, PAPEL_DIR);
 
+
+// ----------------- SETUP -----------------
 void setup() {
   Serial.begin(115200);
   while (!Serial) {}
-  Serial.println(F("READY"));
+
   pinMode(SOL_PIN, OUTPUT);
-  
   pinMode(EN_PIN, OUTPUT);
   digitalWrite(EN_PIN, LOW);
 
-  stepCarro.setMaxSpeed(4000); stepCarro.setAcceleration(2000);
-  stepPapel.setMaxSpeed(4000); stepPapel.setAcceleration(2000);
+  stepCarro.setMaxSpeed(CARRO_SPEED);
+  stepCarro.setAcceleration(CARRO_SPEED);
+
+  stepPapel.setMaxSpeed(PAPEL_SPEED);
+  stepPapel.setAcceleration(PAPEL_SPEED);
+
+  // Suponemos que físicamente arrancas en el margen derecho (home)
+  stepCarro.setCurrentPosition(0);
+
+  // Cargar calibración de X desde EEPROM
+  EEPROM.get(0, calibXDistance);
+  if (calibXDistance <= 0) {
+    Serial.println(F("Calibración X no encontrada. Ejecuta 'calibration' antes de imprimir."));
+    stepsPerMmX = 0.0f;
+  } else {
+    stepsPerMmX = (float)calibXDistance / CARRO_TRAVEL_MM;
+    Serial.print(F("Calibración X: "));
+    Serial.print(calibXDistance);
+    Serial.print(F(" pasos / "));
+    Serial.print(CARRO_TRAVEL_MM);
+    Serial.print(F(" mm => "));
+    Serial.print(stepsPerMmX);
+    Serial.println(F(" pasos/mm"));
+  }
+
+  // Escala fija para Y con tu dato: 100 pasos = 10,1 cm
+  stepsPerMmY = PAPEL_TRAVEL_STEPS / PAPEL_TRAVEL_MM;
+  Serial.print(F("Escala eje Y: "));
+  Serial.print(stepsPerMmY);
+  Serial.println(F(" pasos/mm (a partir de 100 pasos = 10,1 cm)"));
+
+  currentColumn = 0;
+
+  Serial.println(F("READY"));
 }
 
+
+// ----------------- LOOP -----------------
+//
+// Línea por serie:
+//  - "calibration" -> modo calibración X
+//  - "feed"        -> jalar papel 7,75 cm (punzón -> rodillo)
+//  - cualquier otra línea = texto a imprimir en una línea braille
+//
 void loop() {
   if (!Serial.available()) return;
 
-  char c = (char)Serial.read();
+  String line = Serial.readStringUntil('\n');
+  if (line.length() == 0) return;
 
-  // Normaliza controles de fin de línea / página
-  if (c == '\r') {
-    // CR: ignóralo para no duplicar cuando venga CRLF desde Windows
+  // Quitar CR si viene CRLF
+  if (line.endsWith("\r")) {
+    line.remove(line.length() - 1);
+  }
+
+  if (line.length() == 0) return;
+
+  // --- Comandos especiales ---
+  if (line.equalsIgnoreCase("calibration")) {
+    runCalibrationX();
     return;
   }
 
-  if (c == '\n') {
-    handleEndLine();
-    Serial.write(ACK);
+  if (line.equalsIgnoreCase("feed")) {
+    feedPaperToRoller();
     return;
   }
 
-  if (c == '\f') { // Form Feed = salto de página
-    handleEndPage();
-    Serial.write(ACK);
-    return;
+  // --- Línea de texto a imprimir ---
+  for (unsigned int idx = 0; idx < line.length(); ++idx) {
+    char c = line[idx];
+
+    if ((uint8_t)c == EOT) {
+      handleEndJob();
+      Serial.write(ACK);
+      return;
+    }
+
+    if (c == '\f') {
+      handleEndPage();
+      Serial.write(ACK);
+      return;
+    }
+
+    const char* bin = getBinary(c);
+    if (bin) {
+      processBin(bin);
+      Serial.write(ACK);
+    } else {
+      Serial.write(NAK);
+    }
   }
 
-  if((uint8_t)c == EOT) {
-    handleEndJob();
-    Serial.write(ACK);
-    return;
-  }
-
-  // Cualquier otro carácter: procesar Braille
-  const char* bin = getBinary(c);
-
-  if (bin) {
-    // Si quieres ver qué llegó:
-    // Serial.println(bin);
-
-    processBin(bin);
-    Serial.write(ACK);
-  } else {
-    // Caracter no mapeado (acentos/UTF-8, etc.)
-    Serial.write(NAK);
-  }
+  // Fin de línea lógica => salto a la siguiente línea braille
+  handleEndLine();
 }
 
-// Procesa los 6 bits "000000" de la celda braille
+
+// ============== MODO CALIBRACIÓN X ==============
+//
+// Carro en 0 (derecha), se mueve hacia la izquierda (negativo) hasta que el
+// usuario escribe 'fin' por serie. Luego vuelve a 0 y guarda distancia.
+//
+void runCalibrationX() {
+  Serial.println(F("[CALIBRATION MODE X]"));
+
+  stepCarro.setMaxSpeed(CARRO_SPEED_CAL);
+  stepCarro.setAcceleration(CARRO_SPEED_CAL);
+  stepPapel.setMaxSpeed(PAPEL_SPEED_CAL);
+  stepPapel.setAcceleration(PAPEL_SPEED_CAL);
+
+  stepCarro.setCurrentPosition(0);
+
+  Serial.println(F("Moviendo carro hacia la izquierda..."));
+  Serial.println(F("Escribe 'fin' cuando llegue al tope mecánico."));
+
+  stepCarro.moveTo(-1000000L); // muy negativo: hacia la izquierda
+
+  while (true) {
+    stepCarro.run();
+
+    if (Serial.available()) {
+      String cmd = Serial.readStringUntil('\n');
+      cmd.trim();
+      if (cmd.equalsIgnoreCase("fin")) {
+        break;
+      }
+    }
+  }
+
+  calibXDistance = labs(stepCarro.currentPosition());
+  Serial.print(F("Distancia X registrada: "));
+  Serial.print(calibXDistance);
+  Serial.println(F(" pasos"));
+
+  EEPROM.put(0, calibXDistance);
+  Serial.println(F("Guardado en EEPROM."));
+
+  stepsPerMmX = (float)calibXDistance / CARRO_TRAVEL_MM;
+  Serial.print(F("Nueva escala X: "));
+  Serial.print(stepsPerMmX);
+  Serial.println(F(" pasos/mm"));
+
+  stepCarro.moveTo(0);
+  while (stepCarro.distanceToGo() != 0) {
+    stepCarro.run();
+  }
+
+  stepCarro.setMaxSpeed(CARRO_SPEED);
+  stepCarro.setAcceleration(CARRO_SPEED);
+  stepPapel.setMaxSpeed(PAPEL_SPEED);
+  stepPapel.setAcceleration(PAPEL_SPEED);
+
+  Serial.println(F("[CALIBRATION DONE]"));
+}
+
+
+// ============== FUNCIÓN DE JALAR PAPEL ==============
+//
+// Recorremos la distancia fija punzón–rodillo para que el papel
+// quede sujeto por el rodillo.
+//
+void feedPaperToRoller() {
+  moveMm(PAPEL_AXIS, ROLLER_TO_PUNCH_MM);
+  Serial.println(F("[FEED] Papel jalado hasta el rodillo"));
+}
+
+
+// ============== IMPRESIÓN BRAILLE ==============
+//
+// Convención local dentro de la celda:
+// Tomamos el origen (0,0) en el PUNTO 4 (columna derecha, fila superior).
+// Coordenadas (mm) de cada punto respecto a ese origen:
+//  P4: (  0,   0)
+//  P5: (  0,   b)
+//  P6: (  0,  2b)
+//  P1: ( -a,   0)
+//  P2: ( -a,   b)
+//  P3: ( -a,  2b)
+//
+// De esta forma la celda vive "hacia la izquierda" (X negativo) tal y como
+// imprimimos de derecha a izquierda.
+//
 void processBin(const char* bin) {
+  static const float DOT_X_MM[6] = {
+    -BRAILLE_A_MM,        // punto 1
+    -BRAILLE_A_MM,        // punto 2
+    -BRAILLE_A_MM,        // punto 3
+    0.0f,                 // punto 4
+    0.0f,                 // punto 5
+    0.0f                  // punto 6
+  };
+
+  static const float DOT_Y_MM[6] = {
+    0.0f,                 // punto 1 / 4
+    BRAILLE_B_MM,         // punto 2 / 5
+    2.0f * BRAILLE_B_MM,  // punto 3 / 6
+    0.0f,
+    BRAILLE_B_MM,
+    2.0f * BRAILLE_B_MM
+  };
+
+  // Al entrar asumimos que estamos en el origen de la celda actual (P4).
+  float localX = 0.0f;
+  float localY = 0.0f;
+
   for (uint8_t i = 0; i < 6 && bin[i] != '\0'; ++i) {
+    float targetX = DOT_X_MM[i];
+    float targetY = DOT_Y_MM[i];
+
+    float dx = targetX - localX;
+    float dy = targetY - localY;
+
+    if (fabs(dx) > 0.0001f) moveMm(CARRO_AXIS, dx);
+    if (fabs(dy) > 0.0001f) moveMm(PAPEL_AXIS, dy);
+
+    localX = targetX;
+    localY = targetY;
 
     firePunch(bin[i]);
-
-    //End of row
-    if(i == 2) {
-      Serial.println("End of row, moving to next row");
-      move(CARRO_AXIS, 1000);
-      move(PAPEL_AXIS, 1000);
-    }
-
-    if(i == 5) {
-      Serial.println("End of char, moving to nxt char");
-      move(CARRO_AXIS, 1000);
-      move(PAPEL_AXIS, 1000);
-    }
-
   }
+
+  // Al terminar la celda, queremos situarnos en el origen (P4) de la
+  // SIGUIENTE celda hacia la izquierda.
+  // Eso está a -c mm respecto al origen actual de esta celda.
+  float targetNextX = -BRAILLE_C_MM; // una celda completa hacia la izquierda
+  float targetNextY = 0.0f;
+
+  float dxEnd = targetNextX - localX;
+  float dyEnd = targetNextY - localY;
+
+  if (fabs(dxEnd) > 0.0001f) moveMm(CARRO_AXIS, dxEnd);
+  if (fabs(dyEnd) > 0.0001f) moveMm(PAPEL_AXIS, dyEnd);
+
+  currentColumn++;
 
   Serial.println(F("Ending processing char"));
 }
 
-void move(Axis axis, float steps){
-  long s = lroundf(steps);  // a entero de pasos
-  if (s == 0) return;
 
+// ============== Conversión mm ↔ pasos ==============
+
+long mmToStepsX(float mm) {
+  if (stepsPerMmX <= 0.0f) return 0;
+  return lroundf(mm * stepsPerMmX);   // mm>0 -> derecha, mm<0 -> izquierda
+}
+
+long mmToStepsY(float mm) {
+  if (stepsPerMmY <= 0.0f) return 0;
+  return lroundf(mm * stepsPerMmY);
+}
+
+void moveMm(Axis axis, float mm) {
+  long steps = 0;
   if (axis == CARRO_AXIS) {
-    stepCarro.move(s);      // objetivo relativo
+    steps = mmToStepsX(mm);
+    if (steps == 0) return;
+    stepCarro.move(steps);    // relativo
   } else { // PAPEL_AXIS
-    stepPapel.move(s);
+    steps = mmToStepsY(mm);
+    if (steps == 0) return;
+    stepPapel.move(steps);    // relativo
   }
-
-  // Ejecuta ambos a la vez hasta terminar
   waitAll();
-
 }
 
-void setHome(){
-  
-}
+
+// ============== Golpe del punto ==============
 
 void firePunch(char bit) {
   if (bit == '1') {
     Serial.print('.');
-    // tone(SOL_PIN, 1000, 50);
     digitalWrite(SOL_PIN, HIGH);
     delay(DOT_ON_MS);
     digitalWrite(SOL_PIN, LOW);
     delay(DOT_OFF_MS);
-  } else { // '0'
+    digitalWrite(SOL_PIN, HIGH);
+    delay(DOT_ON_MS);
+    digitalWrite(SOL_PIN, LOW);
+    delay(DOT_OFF_MS);
+    digitalWrite(SOL_PIN, HIGH);
+    delay(DOT_ON_MS);
+    digitalWrite(SOL_PIN, LOW);
+    delay(DOT_OFF_MS);
+    digitalWrite(SOL_PIN, HIGH);
+    delay(DOT_ON_MS);
+    digitalWrite(SOL_PIN, LOW);
+    delay(DOT_OFF_MS);
+    digitalWrite(SOL_PIN, HIGH);
+    delay(DOT_ON_MS);
+    digitalWrite(SOL_PIN, LOW);
+    delay(DOT_OFF_MS);
+  } else {
     Serial.print('_');
     delay(DOT_ON_MS + DOT_OFF_MS);
   }
@@ -152,7 +389,9 @@ void firePunch(char bit) {
 }
 
 
-void waitAll(){
+// ============== Sincronización motores ==============
+
+void waitAll() {
   digitalWrite(EN_PIN, LOW);
   while (stepCarro.distanceToGo() != 0 || stepPapel.distanceToGo() != 0) {
     stepCarro.run();
@@ -160,20 +399,39 @@ void waitAll(){
   }
 }
 
-// Acción especial para fin de línea
+
+// ============== Fin de línea / página / trabajo ==============
+
+// Fin de línea: volver al margen derecho (X=0) y bajar una línea.
 void handleEndLine() {
-  // Mueve el "carro" al inicio de la siguiente línea, avanza papel, etc.
-  // moveToNextLine();
+  // Después de imprimir 'currentColumn' celdas, estamos aproximadamente en
+  // X = -currentColumn * BRAILLE_C_MM. Para volver a 0 hay que mover
+  // +currentColumn * BRAILLE_C_MM (derecha).
+  float backX = currentColumn * BRAILLE_C_MM;
+    Serial.print(F("Interline move mm="));
+  Serial.print(BRAILLE_D_MM);
+  Serial.print(F("  stepsY="));
+  Serial.println(mmToStepsY(BRAILLE_D_MM));
+
+  if (fabs(backX) > 0.0001f) {
+    moveMm(CARRO_AXIS, backX);
+  }
+
+  // Bajar a la siguiente línea (interlineado d)
+  moveMm(PAPEL_AXIS, BRAILLE_D_MM);
+
+  currentColumn = 0;
+
   Serial.println(F("[EOL]"));
 }
 
-// Acción especial para fin de página
 void handleEndPage() {
-  // Rutina de salto de página: resetea coordenadas, avanza varias líneas, etc.
-  // newPage();
+  // Aquí podrías implementar expulsión total de la hoja si conoces la altura útil.
+  currentColumn = 0;
   Serial.println(F("[EOP]"));
 }
 
 void handleEndJob() {
+  currentColumn = 0;
   Serial.println(F("[EOJ]"));
 }
