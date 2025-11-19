@@ -8,6 +8,7 @@
 const uint8_t ACK = 0x06;  // Acknowledge
 const uint8_t NAK = 0x15;  // Negative Acknowledge
 const uint8_t EOT = 0x04;  // End of Transmission
+const uint8_t FEED_CHAR = 0x05; // ENQ -> petición de jalar papel (feed)
 
 // ---------------- Pines ----------------
 #define SOL_PIN    A3
@@ -134,43 +135,51 @@ void setup() {
 //  - cualquier otra línea = texto a imprimir en una línea braille
 //
 void loop() {
+  // Procesamiento por bytes: soporta un carácter especial para "feed" y
+  // el carácter '#' para terminar el trabajo. Los caracteres imprimibles
+  // se procesan inmediatamente (para permitir que la app envíe carácter
+  // por carácter y espere ACK por cada uno).
   if (!Serial.available()) return;
 
-  String line = Serial.readStringUntil('\n');
-  if (line.length() == 0) return;
+  while (Serial.available()) {
+    int b = Serial.read();
+    if (b < 0) continue;
 
-  // Quitar CR si viene CRLF
-  if (line.endsWith("\r")) {
-    line.remove(line.length() - 1);
-  }
+    if ((uint8_t)b == FEED_CHAR) {
+      feedPaperToRoller();
+      Serial.write(ACK);
+      continue;
+    }
 
-  if (line.length() == 0) return;
-
-  // --- Comandos especiales ---
-  if (line.equalsIgnoreCase("calibration")) {
-    runCalibrationX();
-    return;
-  }
-
-  if (line.equalsIgnoreCase("feed")) {
-    feedPaperToRoller();
-    return;
-  }
-
-  // --- Línea de texto a imprimir ---
-  for (unsigned int idx = 0; idx < line.length(); ++idx) {
-    char c = line[idx];
-
-    if ((uint8_t)c == EOT) {
+    if ((uint8_t)b == '#') {
       handleEndJob();
       Serial.write(ACK);
-      return;
+      continue;
+    }
+
+    if ((uint8_t)b == EOT) {
+      handleEndJob();
+      Serial.write(ACK);
+      continue;
+    }
+
+    char c = (char)b;
+    if (c == '\r') {
+      // ignorar CR
+      continue;
+    }
+
+    if (c == '\n') {
+      // fin de línea lógico
+      handleEndLine();
+      Serial.write(ACK);
+      continue;
     }
 
     if (c == '\f') {
       handleEndPage();
       Serial.write(ACK);
-      return;
+      continue;
     }
 
     const char* bin = getBinary(c);
@@ -181,9 +190,6 @@ void loop() {
       Serial.write(NAK);
     }
   }
-
-  // Fin de línea lógica => salto a la siguiente línea braille
-  handleEndLine();
 }
 
 
@@ -273,13 +279,14 @@ void feedPaperToRoller() {
 // imprimimos de derecha a izquierda.
 //
 void processBin(const char* bin) {
+
   static const float DOT_X_MM[6] = {
-    -BRAILLE_A_MM,        // punto 1
-    -BRAILLE_A_MM,        // punto 2
-    -BRAILLE_A_MM,        // punto 3
-    0.0f,                 // punto 4
-    0.0f,                 // punto 5
-    0.0f                  // punto 6
+    0.0f,          // bin[0] -> columna DERECHA, fila superior  (P4)
+    0.0f,          // bin[1] -> columna DERECHA, fila media    (P5)
+    0.0f,          // bin[2] -> columna DERECHA, fila inferior (P6)
+    -BRAILLE_A_MM, // bin[3] -> columna IZQUIERDA, fila sup.   (P1)
+    -BRAILLE_A_MM, // bin[4] -> columna IZQUIERDA, fila media  (P2)
+    -BRAILLE_A_MM  // bin[5] -> columna IZQUIERDA, fila inf.   (P3)
   };
 
   static const float DOT_Y_MM[6] = {
@@ -381,6 +388,10 @@ void firePunch(char bit) {
     delay(DOT_ON_MS);
     digitalWrite(SOL_PIN, LOW);
     delay(DOT_OFF_MS);
+    digitalWrite(SOL_PIN, HIGH);
+    delay(DOT_ON_MS);
+    digitalWrite(SOL_PIN, LOW);
+    delay(DOT_OFF_MS);
   } else {
     Serial.print('_');
     delay(DOT_ON_MS + DOT_OFF_MS);
@@ -434,4 +445,15 @@ void handleEndPage() {
 void handleEndJob() {
   currentColumn = 0;
   Serial.println(F("[EOJ]"));
+
+  digitalWrite(EN_PIN, LOW);
+
+  stepPapel.setSpeed(CARRO_SPEED);
+
+  unsigned long start = millis();
+  while (millis() - start < 2500UL){
+    stepPapel.runSpeed();
+  }
+
+  stepPapel.setSpeed(0);
 }

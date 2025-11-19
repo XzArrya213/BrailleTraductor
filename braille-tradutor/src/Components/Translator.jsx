@@ -64,7 +64,7 @@ async function sendCharAndWaitAck(
   reader,
   encoder,
   ch,
-  ackTimeoutMs = 3000,
+  ackTimeoutMs = 10000,
   onLog
 ) {
   const encodeLabel = (value) => {
@@ -113,6 +113,50 @@ async function sendCharAndWaitAck(
           if (onLog) {
             onLog(`NAK recibido para ${encodeLabel(ch)}`);
           }
+          return false;
+        }
+        pending.push(byte);
+      }
+      if (pending.length && onLog) {
+        onLog(decoder.decode(new Uint8Array(pending)).trim());
+        pending = [];
+      }
+    }
+    if (performance.now() - start > ackTimeoutMs) {
+      throw new Error("Tiempo de espera agotado esperando ACK");
+    }
+  }
+}
+
+// Espera por un ACK/NAK sin escribir nada. Útil cuando ya enviamos bytes
+// crudos directamente con writer.write(Uint8Array).
+async function waitForAck(reader, ackTimeoutMs = 3000, onLog) {
+  const start = performance.now();
+  const decoder = new TextDecoder();
+  let pending = [];
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) {
+      throw new Error("El lector serie se cerró esperando ACK");
+    }
+    if (value && value.length) {
+      for (let i = 0; i < value.length; i += 1) {
+        const byte = value[i];
+        if (byte === ACK) {
+          if (pending.length && onLog) {
+            onLog(decoder.decode(new Uint8Array(pending)).trim());
+            pending = [];
+          }
+          if (onLog) onLog("ACK recibido");
+          return true;
+        }
+        if (byte === NAK) {
+          if (pending.length && onLog) {
+            onLog(decoder.decode(new Uint8Array(pending)).trim());
+            pending = [];
+          }
+          if (onLog) onLog("NAK recibido");
           return false;
         }
         pending.push(byte);
@@ -725,19 +769,16 @@ export default function Traductor() {
       }
       if (arduinoBusy) {
         setArduinoError("El dispositivo está procesando otra operación");
-        appendArduinoLog(
-          "El dispositivo está procesando otra operación",
-          { type: "warning" }
-        );
+        appendArduinoLog("El dispositivo está procesando otra operación", {
+          type: "warning",
+        });
         return false;
       }
 
       setArduinoBusy(true);
       try {
         if (!esperarAck) {
-          await arduinoWriter.write(
-            textEncoderRef.current.encode(mensaje)
-          );
+          await arduinoWriter.write(textEncoderRef.current.encode(mensaje));
           appendArduinoLog(`Comando enviado sin ACK: ${mensaje}`);
           return true;
         }
@@ -753,7 +794,9 @@ export default function Traductor() {
           );
 
           if (!ok) {
-            setArduinoError(`Carácter no reconocido por el dispositivo: "${ch}"`);
+            setArduinoError(
+              `Carácter no reconocido por el dispositivo: "${ch}"`
+            );
             appendArduinoLog(
               `Carácter no reconocido por el dispositivo: "${ch}"`,
               { type: "error" }
@@ -779,13 +822,7 @@ export default function Traductor() {
         setArduinoBusy(false);
       }
     },
-    [
-      arduinoPort,
-      arduinoReader,
-      arduinoWriter,
-      arduinoBusy,
-      appendArduinoLog,
-    ]
+    [arduinoPort, arduinoReader, arduinoWriter, arduinoBusy, appendArduinoLog]
   );
 
   const manejarDetectarArduino = useCallback(async () => {
@@ -872,6 +909,39 @@ export default function Traductor() {
     const pages = buildPrintablePages(printerText);
     appendArduinoLog(`Iniciando impresión (${pages.length} hoja(s))`);
 
+    // Solicitar jalar papel (feed) antes de iniciar la impresión
+    try {
+      appendArduinoLog("Solicitando feed para acomodar el papel...");
+      // Escribir byte crudo 0x05 para evitar ambigüedades de codificación
+      try {
+        await arduinoWriter.write(new Uint8Array([0x05]));
+        appendArduinoLog("Feed enviado (byte crudo). Esperando ACK...");
+      } catch (werr) {
+        appendArduinoLog(
+          `Error al escribir byte de feed: ${
+            werr && werr.message ? werr.message : String(werr)
+          }`,
+          { type: "error" }
+        );
+        throw werr;
+      }
+
+      const feedOk = await waitForAck(arduinoReader, 15000, appendArduinoLog);
+      if (!feedOk) {
+        appendArduinoLog("No se recibió ACK para feed", { type: "error" });
+        throw new Error("No ACK en feed");
+      }
+      appendArduinoLog("Feed completado.");
+    } catch (feedErr) {
+      appendArduinoLog(
+        `Error durante feed: ${
+          feedErr && feedErr.message ? feedErr.message : String(feedErr)
+        }`,
+        { type: "error" }
+      );
+      throw feedErr;
+    }
+
     setArduinoBusy(true);
     try {
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
@@ -889,7 +959,11 @@ export default function Traductor() {
         if (lastContentLine === -1) {
           appendArduinoLog(`Hoja ${pageIndex + 1}: sin contenido`);
         } else {
-          for (let lineIndex = 0; lineIndex <= lastContentLine; lineIndex += 1) {
+          for (
+            let lineIndex = 0;
+            lineIndex <= lastContentLine;
+            lineIndex += 1
+          ) {
             const lineContent = pageLines[lineIndex] || "";
             appendArduinoLog(
               `Hoja ${pageIndex + 1}, línea ${lineIndex + 1}: ${
@@ -903,7 +977,7 @@ export default function Traductor() {
                 arduinoReader,
                 textEncoderRef.current,
                 ch,
-                3000,
+                15000,
                 appendArduinoLog
               );
               if (!ok) {
@@ -919,7 +993,7 @@ export default function Traductor() {
               arduinoReader,
               textEncoderRef.current,
               "\n",
-              3000,
+              15000,
               appendArduinoLog
             );
             if (!eolOk) {
@@ -937,7 +1011,7 @@ export default function Traductor() {
             arduinoReader,
             textEncoderRef.current,
             FORM_FEED,
-            3000,
+            15000,
             appendArduinoLog
           );
           if (!eopOk) {
@@ -954,8 +1028,8 @@ export default function Traductor() {
         arduinoWriter,
         arduinoReader,
         textEncoderRef.current,
-        EOT,
-        3000,
+        "#",
+        15000,
         appendArduinoLog
       );
       if (!eojOk) {
@@ -1456,7 +1530,6 @@ export default function Traductor() {
                 }}
               >
                 <Tabs
-
                   value={pestaña}
                   onChange={manejarCambioPestaña}
                   aria-label="pestañas de entrada"
@@ -1511,7 +1584,7 @@ export default function Traductor() {
                             style={{ boxShadow: "none" }}
                             placeholder="Ingrese el texto aquí"
                             value={textoEntrada}
-                            onChange={(e) => setTextoEntrada(e.target.value) }
+                            onChange={(e) => setTextoEntrada(e.target.value)}
                             onFocus={() => setEntradaEnfocada(true)}
                             onBlur={() => setEntradaEnfocada(false)}
                           ></textarea>
