@@ -74,14 +74,10 @@ const sanitizePagesArray = (pages) => {
 };
 
 const serializePages = (pages) =>
-  pages
-    .map((lines) => lines.join("\n"))
-    .join("\n");
+  pages.map((lines) => lines.join("\n")).join("\n");
 
 const serializeBraContent = (pages) =>
-  pages
-    .map((lines) => lines.join("\n"))
-    .join(`\n${BRA_PAGE_SEPARATOR}\n`);
+  pages.map((lines) => lines.join("\n")).join(`\n${BRA_PAGE_SEPARATOR}\n`);
 
 const parseBraContent = (text) => {
   if (!text) {
@@ -110,8 +106,7 @@ const parseBraContent = (text) => {
 
 const deserializePages = (text) => {
   const normalized = typeof text === "string" ? text.replace(/\r/g, "") : "";
-  const rawLines =
-    normalized.length > 0 ? normalized.split("\n") : [""];
+  const rawLines = normalized.length > 0 ? normalized.split("\n") : [""];
   const pages = [];
   let currentLines = [];
 
@@ -279,12 +274,9 @@ const PrinterPanel = ({
   );
 
   const handleAddPage = useCallback(() => {
-    commitPages(
-      (prevPages) => [...prevPages, createEmptyPage()],
-      {
-        nextActivePage: (prevPages) => prevPages.length,
-      }
-    );
+    commitPages((prevPages) => [...prevPages, createEmptyPage()], {
+      nextActivePage: (prevPages) => prevPages.length,
+    });
   }, [commitPages]);
 
   const handleRemovePageSafe = useCallback(() => {
@@ -367,7 +359,8 @@ const PrinterPanel = ({
 
   useEffect(() => {
     if (logsContainerRef.current) {
-      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+      logsContainerRef.current.scrollTop =
+        logsContainerRef.current.scrollHeight;
     }
   }, [logs, showLogs]);
 
@@ -379,19 +372,16 @@ const PrinterPanel = ({
 
   const logsContainerRef = useRef(null);
 
-  const setTextareaRef = useCallback(
-    (pageIndex, element) => {
-      if (!textareaRefs.current) {
-        textareaRefs.current = {};
-      }
-      if (element) {
-        textareaRefs.current[pageIndex] = element;
-      } else if (textareaRefs.current[pageIndex]) {
-        delete textareaRefs.current[pageIndex];
-      }
-    },
-    []
-  );
+  const setTextareaRef = useCallback((pageIndex, element) => {
+    if (!textareaRefs.current) {
+      textareaRefs.current = {};
+    }
+    if (element) {
+      textareaRefs.current[pageIndex] = element;
+    } else if (textareaRefs.current[pageIndex]) {
+      delete textareaRefs.current[pageIndex];
+    }
+  }, []);
 
   return (
     <div className="flex flex-col items-center gap-10 w-full">
@@ -495,15 +485,17 @@ const PrinterPanel = ({
       {showLogs && (
         <div className="w-full max-w-[900px] bg-white border border-gray-200 rounded-lg shadow-md p-6">
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-base font-semibold text-slate-700">Consola Arduino</h3>
+            <h3 className="text-base font-semibold text-slate-700">
+              Consola Arduino
+            </h3>
             <span className="text-xs text-slate-400">
               Últimos {logs ? logs.length : 0} eventos
             </span>
           </div>
           <div
-          ref={logsContainerRef}
-          className="h-48 overflow-y-auto bg-slate-900 text-slate-100 rounded-md p-3 font-mono text-xs space-y-2"
-        >
+            ref={logsContainerRef}
+            className="h-48 overflow-y-auto bg-slate-900 text-slate-100 rounded-md p-3 font-mono text-xs space-y-2"
+          >
             {logs && logs.length ? (
               logs.map((log) => (
                 <div key={log.id} className="whitespace-pre-wrap">
@@ -588,8 +580,11 @@ const PrinterPanel = ({
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
-                const { selectionStart, selectionEnd, value: currentValue } =
-                  event.target;
+                const {
+                  selectionStart,
+                  selectionEnd,
+                  value: currentValue,
+                } = event.target;
                 const previousScrollTop =
                   typeof event.target.scrollTop === "number"
                     ? event.target.scrollTop
@@ -645,7 +640,10 @@ PrinterPanel.propTypes = {
       id: PropTypes.string.isRequired,
       message: PropTypes.string.isRequired,
       type: PropTypes.string,
-      timestamp: PropTypes.oneOfType([PropTypes.string, PropTypes.instanceOf(Date)]),
+      timestamp: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.instanceOf(Date),
+      ]),
     })
   ),
   onClearLogs: PropTypes.func,
